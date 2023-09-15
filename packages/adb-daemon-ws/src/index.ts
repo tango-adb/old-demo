@@ -1,10 +1,14 @@
-import type { AdbDaemonDevice } from "@yume-chan/adb";
+import type {
+    AdbDaemonDevice,
+    AdbPacketData,
+    AdbPacketInit,
+} from "@yume-chan/adb";
 import {
     AdbPacket,
     AdbPacketSerializeStream,
     unreachable,
 } from "@yume-chan/adb";
-import type { Consumable } from "@yume-chan/stream-extra";
+import type { Consumable, ReadableWritablePair } from "@yume-chan/stream-extra";
 import {
     ConsumableWritableStream,
     DuplexStreamFactory,
@@ -23,7 +27,9 @@ export default class AdbDaemonWebSocketDevice implements AdbDaemonDevice {
         this.name = name;
     }
 
-    async connect() {
+    async connect(): Promise<
+        ReadableWritablePair<AdbPacketData, Consumable<AdbPacketInit>>
+    > {
         const socket = new WebSocket(this.serial);
         socket.binaryType = "arraybuffer";
 
@@ -65,8 +71,8 @@ export default class AdbDaemonWebSocketDevice implements AdbDaemonDevice {
                     size(chunk) {
                         return chunk.byteLength;
                     },
-                }
-            )
+                },
+            ),
         );
 
         const writable = duplex.createWritable(
@@ -74,12 +80,12 @@ export default class AdbDaemonWebSocketDevice implements AdbDaemonDevice {
                 write(chunk) {
                     socket.send(chunk);
                 },
-            })
+            }),
         );
 
         return {
             readable: readable.pipeThrough(
-                new StructDeserializeStream(AdbPacket)
+                new StructDeserializeStream(AdbPacket),
             ),
             writable: pipeFrom(writable, new AdbPacketSerializeStream()),
         };

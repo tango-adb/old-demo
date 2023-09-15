@@ -45,28 +45,28 @@ const DeviceInfo: NextPage = () => {
                 <title>Device Info - Tango</title>
             </Head>
 
-            <MessageBar>
+            <MessageBar delayedRender={false}>
                 <code>ro.product.name</code>
                 <span> field in Android Build Props</span>
             </MessageBar>
             <span>Product Name: {GLOBAL_STATE.adb?.banner.product}</span>
             <Separator />
 
-            <MessageBar>
+            <MessageBar delayedRender={false}>
                 <code>ro.product.model</code>
                 <span> field in Android Build Props</span>
             </MessageBar>
             <span>Model Name: {GLOBAL_STATE.adb?.banner.model}</span>
             <Separator />
 
-            <MessageBar>
+            <MessageBar delayedRender={false}>
                 <code>ro.product.device</code>
                 <span> field in Android Build Props</span>
             </MessageBar>
             <span>Device Name: {GLOBAL_STATE.adb?.banner.device}</span>
             <Separator />
 
-            <MessageBar>
+            <MessageBar delayedRender={false}>
                 <span>
                     Feature list decides how each individual commands should
                     behavior.

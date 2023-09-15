@@ -47,7 +47,10 @@ const Power: NextPage = () => {
             </div>
 
             <div style={{ marginTop: 20 }}>
-                <MessageBar messageBarType={MessageBarType.severeWarning}>
+                <MessageBar
+                    messageBarType={MessageBarType.severeWarning}
+                    delayedRender={false}
+                >
                     Danger Zone Below
                 </MessageBar>
             </div>

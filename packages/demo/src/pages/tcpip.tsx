@@ -77,19 +77,30 @@ class TcpIpState {
             return;
         }
 
-        const { serviceListenAddresses, servicePort, persistPort } =
-            await GLOBAL_STATE.adb.tcpip.getListenAddresses();
+        const serviceListenAddresses = await GLOBAL_STATE.adb.getProp(
+            "service.adb.listen_addrs",
+        );
+        const servicePort = await GLOBAL_STATE.adb.getProp(
+            "service.adb.tcp.port",
+        );
+        const persistPort = await GLOBAL_STATE.adb.getProp(
+            "persist.adb.tcp.port",
+        );
 
         if (signal.aborted) {
             return;
         }
 
         runInAction(() => {
-            this.serviceListenAddresses = serviceListenAddresses;
+            this.serviceListenAddresses =
+                serviceListenAddresses !== ""
+                    ? serviceListenAddresses.split(",")
+                    : undefined;
 
             if (servicePort) {
-                this.servicePortEnabled = !serviceListenAddresses;
-                this.servicePort = servicePort.toString();
+                this.servicePortEnabled =
+                    !serviceListenAddresses && servicePort !== "0";
+                this.servicePort = servicePort;
             } else {
                 this.servicePortEnabled = false;
                 this.servicePort = "5555";
@@ -98,7 +109,7 @@ class TcpIpState {
             if (persistPort) {
                 this.persistPortEnabled =
                     !serviceListenAddresses && !servicePort;
-                this.persistPort = persistPort.toString();
+                this.persistPort = persistPort;
             } else {
                 this.persistPortEnabled = false;
                 this.persistPort = undefined;
@@ -134,7 +145,7 @@ const TcpIp: NextPage = () => {
                 state.visible = false;
             });
         };
-    });
+    }, []);
 
     const handleServicePortEnabledChange = useCallback(
         (e: unknown, value?: boolean) => {
@@ -164,7 +175,7 @@ const TcpIp: NextPage = () => {
             <CommandBar items={state.commandBarItems} />
 
             <StackItem>
-                <MessageBar>
+                <MessageBar delayedRender={false}>
                     <Text>
                         For Tango to wirelessly connect to your device,
                         <ExternalLink
@@ -179,7 +190,7 @@ const TcpIp: NextPage = () => {
                 </MessageBar>
             </StackItem>
             <StackItem>
-                <MessageBar>
+                <MessageBar delayedRender={false}>
                     <Text>
                         Your device will disconnect after changing ADB over WiFi
                         config.

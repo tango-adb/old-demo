@@ -12,14 +12,14 @@
         "email": "cnsimonchan@live.com",
         "url": "https://chensi.moe/blog"
     },
-    "homepage": "https://github.com/yume-chan/ya-webadb/tree/main/libraries/adb-daemon-direct-sockets#readme",
+    "homepage": "https://github.com/tango-adb/old-demo/tree/main/packages/adb-daemon-direct-sockets#readme",
     "repository": {
         "type": "git",
-        "url": "git+https://github.com/yume-chan/ya-webadb.git",
-        "directory": "libraries/adb-daemon-direct-sockets"
+        "url": "git+https://github.com/tango-adb/old-demo.git",
+        "directory": "packages/adb-daemon-direct-sockets"
     },
     "bugs": {
-        "url": "https://github.com/yume-chan/ya-webadb/issues"
+        "url": "https://github.com/tango-adb/old-demo/issues"
     },
     "license": "MIT",
     "type": "module",
@@ -32,15 +32,15 @@
         "prepublishOnly": "npm run build"
     },
     "dependencies": {
-        "@yume-chan/adb": "workspace:^0.0.21",
-        "@yume-chan/stream-extra": "workspace:^0.0.21",
-        "tslib": "^2.6.0"
+        "@yume-chan/adb": "^0.0.21",
+        "@yume-chan/stream-extra": "^0.0.21",
+        "tslib": "^2.6.2"
     },
     "devDependencies": {
         "@yume-chan/eslint-config": "workspace:^1.0.0",
         "@yume-chan/tsconfig": "workspace:^1.0.0",
-        "eslint": "^8.44.0",
-        "prettier": "^3.0.0",
-        "typescript": "^5.1.6"
+        "eslint": "^8.49.0",
+        "prettier": "^3.0.3",
+        "typescript": "^5.2.2"
     }
 }

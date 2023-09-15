@@ -102,7 +102,10 @@ const BugReportPage: NextPage = () => {
                 <title>BugReport - Tango</title>
             </Head>
 
-            <MessageBar messageBarType={MessageBarType.info}>
+            <MessageBar
+                messageBarType={MessageBarType.info}
+                delayedRender={false}
+            >
                 This is the `bugreport`/`bugreportz` tool in Android
             </MessageBar>
 

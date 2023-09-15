@@ -15,6 +15,7 @@ import { AdbSyncError } from "@yume-chan/adb";
 import { AdbScrcpyClient, AdbScrcpyOptionsLatest } from "@yume-chan/adb-scrcpy";
 import { VERSION } from "@yume-chan/fetch-scrcpy-server";
 import {
+    CodecOptions,
     DEFAULT_SERVER_PATH,
     ScrcpyDisplay,
     ScrcpyEncoder,
@@ -223,11 +224,16 @@ autorun(() => {
         (async () => {
             const sync = await GLOBAL_STATE.adb!.sync();
             try {
-                const settings = JSON.parse(
-                    await sync
-                        .read(SCRCPY_SETTINGS_FILENAME)
-                        .pipeThrough(new DecodeUtf8Stream())
-                        .pipeThrough(new ConcatStringStream())
+                const content = await sync
+                    .read(SCRCPY_SETTINGS_FILENAME)
+                    .pipeThrough(new DecodeUtf8Stream())
+                    .pipeThrough(new ConcatStringStream());
+                const settings = JSON.parse(content);
+                settings.settings.videoCodecOptions = new CodecOptions(
+                    settings.settings.videoCodecOptions,
+                );
+                settings.settings.audioCodecOptions = new CodecOptions(
+                    settings.settings.audioCodecOptions,
                 );
                 runInAction(() => {
                     SETTING_STATE.settings = {

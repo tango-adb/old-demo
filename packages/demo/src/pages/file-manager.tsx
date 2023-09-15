@@ -1,49 +1,49 @@
 import {
-    Breadcrumb,
-    ContextualMenu,
-    ContextualMenuItem,
-    DetailsListLayoutMode,
-    Dialog,
-    DirectionalHint,
-    IBreadcrumbItem,
-    IColumn,
-    IContextualMenuItem,
-    IDetailsHeaderProps,
-    IRenderFunction,
-    Icon,
-    Layer,
-    MarqueeSelection,
-    Overlay,
-    ProgressIndicator,
-    Selection,
-    ShimmeredDetailsList,
-    Stack,
-    StackItem,
-    concatStyleSets,
-    mergeStyleSets,
+  Breadcrumb,
+  ContextualMenu,
+  ContextualMenuItem,
+  DetailsListLayoutMode,
+  Dialog,
+  DirectionalHint,
+  IBreadcrumbItem,
+  IColumn,
+  IContextualMenuItem,
+  IDetailsHeaderProps,
+  IRenderFunction,
+  Icon,
+  Layer,
+  MarqueeSelection,
+  Overlay,
+  ProgressIndicator,
+  Selection,
+  ShimmeredDetailsList,
+  Stack,
+  StackItem,
+  concatStyleSets,
+  mergeStyleSets,
 } from "@fluentui/react";
 import {
-    FileIconType,
-    getFileTypeIconProps,
-    initializeFileTypeIcons,
+  FileIconType,
+  getFileTypeIconProps,
+  initializeFileTypeIcons,
 } from "@fluentui/react-file-type-icons";
 import { useConst } from "@fluentui/react-hooks";
 import { getIcon } from "@fluentui/style-utilities";
 import {
-    AdbFeature,
-    AdbSync,
-    LinuxFileType,
-    type AdbSyncEntry,
+  AdbFeature,
+  AdbSync,
+  LinuxFileType,
+  type AdbSyncEntry,
 } from "@yume-chan/adb";
 import { WrapConsumableStream, WritableStream } from "@yume-chan/stream-extra";
 import { EMPTY_UINT8_ARRAY } from "@yume-chan/struct";
 import { Zip, ZipPassThrough } from "fflate";
 import {
-    action,
-    autorun,
-    makeAutoObservable,
-    observable,
-    runInAction,
+  action,
+  autorun,
+  makeAutoObservable,
+  observable,
+  runInAction,
 } from "mobx";
 import { observer } from "mobx-react-lite";
 import { NextPage } from "next";
@@ -54,15 +54,15 @@ import { useCallback, useEffect, useState } from "react";
 import { CommandBar, NoSsr } from "../components";
 import { GLOBAL_STATE } from "../state";
 import {
-    Icons,
-    ProgressStream,
-    RouteStackProps,
-    asyncEffect,
-    createFileStream,
-    formatSize,
-    formatSpeed,
-    pickFile,
-    saveFile,
+  Icons,
+  ProgressStream,
+  RouteStackProps,
+  asyncEffect,
+  createFileStream,
+  formatSize,
+  formatSpeed,
+  pickFile,
+  saveFile,
 } from "../utils";
 
 initializeFileTypeIcons();
@@ -87,7 +87,7 @@ const classNames = mergeStyleSets({
 
 const renderDetailsHeader: IRenderFunction<IDetailsHeaderProps> = (
     props?,
-    defaultRender?
+    defaultRender?,
 ) => {
     if (!props || !defaultRender) {
         return null;
@@ -218,12 +218,12 @@ class FileManagerState {
                                             await GLOBAL_STATE.adb!.rm(
                                                 path.resolve(
                                                     this.path,
-                                                    item.name!
-                                                )
+                                                    item.name!,
+                                                ),
                                             );
                                         if (output) {
                                             GLOBAL_STATE.showErrorDialog(
-                                                output
+                                                output,
                                             );
                                             return;
                                         }
@@ -236,7 +236,7 @@ class FileManagerState {
                             })();
                             return false;
                         },
-                    }
+                    },
                 );
                 break;
         }
@@ -263,7 +263,7 @@ class FileManagerState {
                 } else if (typeof aSortKey === "string") {
                     result = compareCaseInsensitively(
                         aSortKey,
-                        bSortKey as string
+                        bSortKey as string,
                     );
                 } else {
                     result =
@@ -390,7 +390,7 @@ class FileManagerState {
                     isCollapsible: true,
                     onRender(item: AdbSyncEntry) {
                         return new Date(
-                            Number(item.ctime!) * 1000
+                            Number(item.ctime!) * 1000,
                         ).toLocaleString();
                     },
                 },
@@ -401,10 +401,10 @@ class FileManagerState {
                     isCollapsible: true,
                     onRender(item: AdbSyncEntry) {
                         return new Date(
-                            Number(item.atime!) * 1000
+                            Number(item.atime!) * 1000,
                         ).toLocaleString();
                     },
-                }
+                },
             );
         }
 
@@ -412,7 +412,7 @@ class FileManagerState {
             item.onColumnClick = (e, column) => {
                 if (this.sortKey === column.key) {
                     runInAction(
-                        () => (this.sortDescending = !this.sortDescending)
+                        () => (this.sortDescending = !this.sortDescending),
                     );
                 } else {
                     runInAction(() => {
@@ -460,7 +460,7 @@ class FileManagerState {
         sync: AdbSync,
         zip: Zip,
         basePath: string,
-        relativePath: string
+        relativePath: string,
     ) {
         if (relativePath !== ".") {
             // Add empty directory
@@ -470,7 +470,7 @@ class FileManagerState {
         }
 
         for (const entry of await sync.readdir(
-            path.resolve(basePath, relativePath)
+            path.resolve(basePath, relativePath),
         )) {
             if (entry.name === "." || entry.name === "..") {
                 continue;
@@ -482,7 +482,7 @@ class FileManagerState {
                         sync,
                         zip,
                         basePath,
-                        path.resolve(relativePath, entry.name)
+                        path.resolve(relativePath, entry.name),
                     );
                     break;
                 case LinuxFileType.File:
@@ -490,7 +490,7 @@ class FileManagerState {
                         sync,
                         zip,
                         basePath,
-                        path.resolve(relativePath, entry.name)
+                        path.resolve(relativePath, entry.name),
                     );
                     break;
             }
@@ -501,7 +501,7 @@ class FileManagerState {
         sync: AdbSync,
         zip: Zip,
         basePath: string,
-        name: string
+        name: string,
     ) {
         const file = new ZipPassThrough(name);
         zip.add(file);
@@ -513,7 +513,7 @@ class FileManagerState {
                 close() {
                     file.push(EMPTY_UINT8_ARRAY, true);
                 },
-            })
+            }),
         );
     }
 
@@ -525,7 +525,7 @@ class FileManagerState {
                 switch (item.type) {
                     case LinuxFileType.Directory: {
                         const stream = saveFile(
-                            `${this.selectedItems[0].name}.zip`
+                            `${this.selectedItems[0].name}.zip`,
                         );
                         const writer = stream.getWriter();
                         const zip = new Zip((err, data, final) => {
@@ -538,7 +538,7 @@ class FileManagerState {
                             sync,
                             zip,
                             path.resolve(this.path, item.name),
-                            "."
+                            ".",
                         );
                         zip.end();
                         break;
@@ -547,7 +547,7 @@ class FileManagerState {
                         await this.getFileStream(
                             sync,
                             this.path,
-                            item.name
+                            item.name,
                         ).pipeTo(saveFile(item.name, Number(item.size)));
                         break;
                 }
@@ -569,7 +569,7 @@ class FileManagerState {
                             sync,
                             zip,
                             this.path,
-                            item.name
+                            item.name,
                         );
                         break;
                     case LinuxFileType.File:
@@ -650,7 +650,7 @@ class FileManagerState {
 
                 if (
                     !(await sync.isDirectory(
-                        path.resolve(currentPath, entry.name!)
+                        path.resolve(currentPath, entry.name!),
                     ))
                 ) {
                     entry.mode = (LinuxFileType.File << 12) | entry.permission;
@@ -693,7 +693,7 @@ class FileManagerState {
                         this.uploadedSize - this.debouncedUploadedSize;
                     this.debouncedUploadedSize = this.uploadedSize;
                 }),
-                1000
+                1000,
             );
 
             try {
@@ -707,8 +707,8 @@ class FileManagerState {
                             new ProgressStream(
                                 action((uploaded) => {
                                     this.uploadedSize = uploaded;
-                                })
-                            )
+                                }),
+                            ),
                         ),
                     type: LinuxFileType.File,
                     permission: 0o666,
@@ -722,7 +722,7 @@ class FileManagerState {
                         1024 /
                         1024
                     ).toFixed(2),
-                    "MB/s"
+                    "MB/s",
                 );
 
                 runInAction(() => {
@@ -760,7 +760,7 @@ const UploadDialog = observer(() => {
                 description={formatSpeed(
                     state.debouncedUploadedSize,
                     state.uploadTotalSize,
-                    state.uploadSpeed
+                    state.uploadSpeed,
                 )}
                 percentComplete={state.uploadedSize / state.uploadTotalSize}
             />
@@ -779,7 +779,7 @@ const FileManager: NextPage = (): JSX.Element | null => {
                 state.visible = false;
             });
         };
-    });
+    }, []);
 
     const router = useRouter();
     useEffect(() => {
@@ -833,7 +833,7 @@ const FileManager: NextPage = (): JSX.Element | null => {
                     break;
             }
         },
-        [previewImage]
+        [previewImage],
     );
 
     const selection = useConst(
@@ -845,7 +845,7 @@ const FileManager: NextPage = (): JSX.Element | null => {
                             selection.getSelection() as ListItem[];
                     });
                 },
-            })
+            }),
     );
 
     const showContextMenu = useCallback(
@@ -862,7 +862,7 @@ const FileManager: NextPage = (): JSX.Element | null => {
 
             return false;
         },
-        []
+        [],
     );
     const hideContextMenu = useCallback(() => {
         runInAction(() => (state.contextMenuTarget = undefined));

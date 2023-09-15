@@ -3,34 +3,34 @@ import { AdbDaemonWebUsbDevice } from "@yume-chan/adb-daemon-webusb";
 import { AdbScrcpyClient, AdbScrcpyOptionsLatest } from "@yume-chan/adb-scrcpy";
 import { VERSION } from "@yume-chan/fetch-scrcpy-server";
 import {
-    Float32PcmPlayer,
-    Float32PlanerPcmPlayer,
-    Int16PcmPlayer,
-    PcmPlayer,
+  Float32PcmPlayer,
+  Float32PlanerPcmPlayer,
+  Int16PcmPlayer,
+  PcmPlayer,
 } from "@yume-chan/pcm-player";
 import {
-    AndroidScreenPowerMode,
-    CodecOptions,
-    DEFAULT_SERVER_PATH,
-    ScrcpyAudioCodec,
-    ScrcpyDeviceMessageType,
-    ScrcpyHoverHelper,
-    ScrcpyInstanceId,
-    ScrcpyLogLevel,
-    ScrcpyMediaStreamPacket,
-    ScrcpyOptionsLatest,
-    ScrcpyVideoCodecId,
-    clamp,
-    h264ParseConfiguration,
-    h265ParseConfiguration,
+  AndroidScreenPowerMode,
+  CodecOptions,
+  DEFAULT_SERVER_PATH,
+  ScrcpyAudioCodec,
+  ScrcpyDeviceMessageType,
+  ScrcpyHoverHelper,
+  ScrcpyInstanceId,
+  ScrcpyLogLevel,
+  ScrcpyMediaStreamPacket,
+  ScrcpyOptionsLatest,
+  ScrcpyVideoCodecId,
+  clamp,
+  h264ParseConfiguration,
+  h265ParseConfiguration,
 } from "@yume-chan/scrcpy";
 import { ScrcpyVideoDecoder } from "@yume-chan/scrcpy-decoder-tinyh264";
 import {
-    Consumable,
-    DistributionStream,
-    InspectStream,
-    ReadableStream,
-    WritableStream,
+  Consumable,
+  DistributionStream,
+  InspectStream,
+  ReadableStream,
+  WritableStream,
 } from "@yume-chan/stream-extra";
 import { action, autorun, makeAutoObservable, runInAction } from "mobx";
 import { GLOBAL_STATE } from "../../state";
@@ -38,16 +38,12 @@ import { ProgressStream } from "../../utils";
 import { AacDecodeStream, OpusDecodeStream } from "./audio-decode-stream";
 import { fetchServer } from "./fetch-server";
 import {
-    AoaKeyboardInjector,
-    KeyboardInjector,
-    ScrcpyKeyboardInjector,
+  AoaKeyboardInjector,
+  KeyboardInjector,
+  ScrcpyKeyboardInjector,
 } from "./input";
 import { MatroskaMuxingRecorder, RECORD_STATE } from "./recorder";
 import { SCRCPY_SETTINGS_FILENAME, SETTING_STATE } from "./settings";
-
-const NOOP = () => {
-    // no-op
-};
 
 export class ScrcpyPageState {
     running = false;
@@ -87,7 +83,7 @@ export class ScrcpyPageState {
                     controller.enqueue(new Consumable(serverBuffer));
                     controller.close();
                 },
-            })
+            }),
         );
     }
 
@@ -167,7 +163,7 @@ export class ScrcpyPageState {
                     this.debouncedServerDownloadedSize =
                         this.serverDownloadedSize;
                 }),
-                1000
+                1000,
             );
 
             let serverBuffer: Uint8Array;
@@ -176,7 +172,7 @@ export class ScrcpyPageState {
                     action(([downloaded, total]) => {
                         this.serverDownloadedSize = downloaded;
                         this.serverTotalSize = total;
-                    })
+                    }),
                 );
                 runInAction(() => {
                     this.serverDownloadSpeed =
@@ -196,7 +192,7 @@ export class ScrcpyPageState {
                         this.debouncedServerUploadedSize;
                     this.debouncedServerUploadedSize = this.serverUploadedSize;
                 }),
-                1000
+                1000,
             );
 
             try {
@@ -211,15 +207,15 @@ export class ScrcpyPageState {
                         // In fact `pushServer` will pipe the stream through a DistributionStream,
                         // but without this pipeThrough, the progress will not be updated.
                         .pipeThrough(
-                            new DistributionStream(ADB_SYNC_MAX_PACKET_SIZE)
+                            new DistributionStream(ADB_SYNC_MAX_PACKET_SIZE),
                         )
                         .pipeThrough(
                             new ProgressStream(
                                 action((progress) => {
                                     this.serverUploadedSize = progress;
-                                })
-                            )
-                        )
+                                }),
+                            ),
+                        ),
                 );
 
                 runInAction(() => {
@@ -234,7 +230,7 @@ export class ScrcpyPageState {
 
             const decoderDefinition =
                 SETTING_STATE.decoders.find(
-                    (x) => x.key === SETTING_STATE.clientSettings.decoder
+                    (x) => x.key === SETTING_STATE.clientSettings.decoder,
                 ) ?? SETTING_STATE.decoders[0];
 
             const videoCodecOptions = new CodecOptions();
@@ -263,7 +259,7 @@ export class ScrcpyPageState {
                     sendDeviceMeta: false,
                     sendDummyByte: false,
                     videoCodecOptions,
-                })
+                }),
             );
 
             runInAction(() => {
@@ -272,7 +268,7 @@ export class ScrcpyPageState {
                 this.log.push(
                     `[client] Server arguments: ${options
                         .serialize()
-                        .join(" ")}`
+                        .join(" ")}`,
                 );
             });
 
@@ -280,7 +276,7 @@ export class ScrcpyPageState {
                 GLOBAL_STATE.adb!,
                 DEFAULT_SERVER_PATH,
                 VERSION,
-                options
+                options,
             );
 
             client.stdout.pipeTo(
@@ -288,7 +284,7 @@ export class ScrcpyPageState {
                     write: action((line) => {
                         this.log.push(line);
                     }),
-                })
+                }),
             );
 
             const sync = await GLOBAL_STATE.adb!.sync();
@@ -300,13 +296,25 @@ export class ScrcpyPageState {
                             controller.enqueue(
                                 new Consumable(
                                     encodeUtf8(
-                                        JSON.stringify({
-                                            settings: SETTING_STATE.settings,
-                                            clientSettings:
-                                                SETTING_STATE.clientSettings,
-                                        })
-                                    )
-                                )
+                                        JSON.stringify(
+                                            {
+                                                settings:
+                                                    SETTING_STATE.settings,
+                                                clientSettings:
+                                                    SETTING_STATE.clientSettings,
+                                            },
+                                            (_, value) => {
+                                                if (
+                                                    value instanceof
+                                                    CodecOptions
+                                                ) {
+                                                    return value.value;
+                                                }
+                                                return value;
+                                            },
+                                        ),
+                                    ),
+                                ),
                             );
                             controller.close();
                         },
@@ -324,7 +332,7 @@ export class ScrcpyPageState {
                 });
 
                 const decoder = new decoderDefinition.Constructor(
-                    metadata.codec
+                    metadata.codec,
                 );
 
                 runInAction(() => {
@@ -347,7 +355,7 @@ export class ScrcpyPageState {
                             lastFrameRendered = decoder.frameRendered;
                             lastFrameSkipped = decoder.frameSkipped;
                         }),
-                        1000
+                        1000,
                     );
                 });
 
@@ -374,7 +382,7 @@ export class ScrcpyPageState {
 
                             runInAction(() => {
                                 this.log.push(
-                                    `[client] Video size changed: ${croppedWidth}x${croppedHeight}`
+                                    `[client] Video size changed: ${croppedWidth}x${croppedHeight}`,
                                 );
                                 this.width = croppedWidth;
                                 this.height = croppedHeight;
@@ -389,13 +397,13 @@ export class ScrcpyPageState {
                                     0;
                                 runInAction(() => {
                                     this.log.push(
-                                        `[client] Keyframe interval: ${interval}ms`
+                                        `[client] Keyframe interval: ${interval}ms`,
                                     );
                                 });
                             }
                             lastKeyframe = packet.pts!;
                         }
-                    }
+                    },
                 );
 
                 stream.pipeThrough(handler).pipeTo(decoder.writable);
@@ -406,15 +414,15 @@ export class ScrcpyPageState {
                     case "disabled":
                         runInAction(() =>
                             this.log.push(
-                                `[client] Demuxer audio: stream explicitly disabled by the device`
-                            )
+                                `[client] Demuxer audio: stream explicitly disabled by the device`,
+                            ),
                         );
                         return;
                     case "errored":
                         runInAction(() =>
                             this.log.push(
-                                `[client] Demuxer audio: stream configuration error on the device`
-                            )
+                                `[client] Demuxer audio: stream configuration error on the device`,
+                            ),
                         );
                         return;
                     case "success":
@@ -424,7 +432,7 @@ export class ScrcpyPageState {
                         throw new Error(
                             `Unexpected audio metadata type ${
                                 metadata["type"] as unknown as string
-                            }`
+                            }`,
                         );
                 }
 
@@ -442,11 +450,11 @@ export class ScrcpyPageState {
                                             chunk.data.buffer,
                                             chunk.data.byteOffset,
                                             chunk.data.byteLength /
-                                                Int16Array.BYTES_PER_ELEMENT
-                                        )
+                                                Int16Array.BYTES_PER_ELEMENT,
+                                        ),
                                     );
                                 },
-                            })
+                            }),
                         );
 
                         await this.audioPlayer.start();
@@ -462,14 +470,14 @@ export class ScrcpyPageState {
                                     codec: metadata.codec.webCodecId,
                                     numberOfChannels: 2,
                                     sampleRate: 48000,
-                                })
+                                }),
                             )
                             .pipeTo(
                                 new WritableStream({
                                     write: (chunk) => {
                                         audioPlayer.feed(chunk);
                                     },
-                                })
+                                }),
                             );
                         await audioPlayer.start();
                         break;
@@ -484,21 +492,21 @@ export class ScrcpyPageState {
                                     codec: metadata.codec.webCodecId,
                                     numberOfChannels: 2,
                                     sampleRate: 48000,
-                                })
+                                }),
                             )
                             .pipeTo(
                                 new WritableStream({
                                     write: (chunk) => {
                                         audioPlayer.feed(chunk);
                                     },
-                                })
+                                }),
                             );
                         await audioPlayer.start();
                         break;
                     }
                     default:
                         throw new Error(
-                            `Unsupported audio codec ${metadata.codec.optionValue}`
+                            `Unsupported audio codec ${metadata.codec.optionValue}`,
                         );
                 }
 
@@ -513,7 +521,7 @@ export class ScrcpyPageState {
                                 RECORD_STATE.recorder.addAudioPacket(packet);
                             }
                         },
-                    })
+                    }),
                 );
             });
 
@@ -525,17 +533,17 @@ export class ScrcpyPageState {
                         switch (message.type) {
                             case ScrcpyDeviceMessageType.Clipboard:
                                 globalThis.navigator.clipboard.writeText(
-                                    message.content
+                                    message.content,
                                 );
                                 break;
                         }
                     },
-                })
+                }),
             );
 
             if (SETTING_STATE.clientSettings.turnScreenOff) {
                 await client.controlMessageWriter!.setScreenPowerMode(
-                    AndroidScreenPowerMode.Off
+                    AndroidScreenPowerMode.Off,
                 );
             }
 
@@ -608,7 +616,7 @@ export class ScrcpyPageState {
         let pointerViewY = clamp(
             (clientY - viewRect.y) / viewRect.height,
             0,
-            1
+            1,
         );
 
         if (this.rotation & 1) {
