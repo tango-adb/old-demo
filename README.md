@@ -4,17 +4,25 @@ This is the now deprecated demo project for `@yume-chan/adb` package. It won't b
 
 ## Build
 
-```bash
+```sh
 pnpm install
 pnpm recursive run build
 ```
 
 ## Generate static build that can be hosted on GitHub Pages
 
-```bash
+The demo is built with [Next.js](https://nextjs.org/), a full-stack React framework, which usually requires a Node.js environment to run.
+
+However, since the demo doesn't have any server-side code, the most simple deployment method is to use the [Static HTML Export](https://nextjs.org/docs/advanced-features/static-html-export) feature of Next.js. It generates pre-rendered, fully static HTML files, that can be deployed to any static website hosting services (e.g. GitHub Pages).
+
+To export static deployable HTML files, after running `rush build` command, run:
+
+```sh
 cd packages/demo
 npx next export
 ```
+
+This will create an `out` folder containing exported HTML files and all required resource files.
 
 ## Features
 
