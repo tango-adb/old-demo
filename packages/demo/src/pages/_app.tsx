@@ -3,6 +3,7 @@ import {
     INavButtonProps,
     IconButton,
     Nav,
+    PrimaryButton,
     Stack,
     StackItem,
 } from "@fluentui/react";
@@ -13,7 +14,7 @@ import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import { useCallback, useEffect, useState } from "react";
-import { Connect, ErrorDialogProvider } from "../components";
+import { Connect, ErrorDialogProvider, ExternalLink } from "../components";
 import "../styles/globals.css";
 import { Icons } from "../utils";
 import { register as registerIcons } from "../utils/icons";
@@ -168,6 +169,10 @@ function App({ Component, pageProps }: AppProps) {
                         <div className={classes.title}>Tango</div>
                     </StackItem>
 
+                    <ExternalLink href="https://app.tangoapp.dev">
+                        <PrimaryButton>Try our new app</PrimaryButton>
+                    </ExternalLink>
+
                     <IconButton
                         iconProps={{ iconName: "PersonFeedback" }}
                         title="Feedback"
@@ -193,7 +198,7 @@ function App({ Component, pageProps }: AppProps) {
                     <StackItem
                         className={mergeClasses(
                             classes.leftColumn,
-                            !leftPanelVisible && classes.hidden
+                            !leftPanelVisible && classes.hidden,
                         )}
                     >
                         <Connect />
