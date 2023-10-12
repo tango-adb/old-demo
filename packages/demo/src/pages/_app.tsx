@@ -1,4 +1,7 @@
 import {
+    Dialog,
+    DialogFooter,
+    DialogType,
     IComponentAsProps,
     INavButtonProps,
     IconButton,
@@ -142,6 +145,8 @@ function App({ Component, pageProps }: AppProps) {
 
     const router = useRouter();
 
+    const [deprecateDialogVisible, setDeprecateDialogVisible] = useState(true);
+
     if ("noLayout" in Component) {
         return <Component {...pageProps} />;
     }
@@ -222,6 +227,46 @@ function App({ Component, pageProps }: AppProps) {
                     </StackItem>
                 </Stack>
             </Stack>
+
+            <Dialog
+                hidden={!deprecateDialogVisible}
+                modalProps={{
+                    styles: { main: { width: 500 } },
+                }}
+                dialogContentProps={{
+                    type: DialogType.normal,
+                    title: "This website will stop working soon",
+                }}
+            >
+                <p>
+                    Because the linked GitHub repository will be moved to the
+                    new organization, this website will stop working soon.
+                </p>
+
+                <p>
+                    Try our new app with fresh design (but fewer features) at
+                    <ExternalLink spaceBefore href="https://tangoapp.dev">
+                        https://tangoapp.dev
+                    </ExternalLink>
+                </p>
+
+                <p>
+                    Or continue using this app at
+                    <ExternalLink
+                        spaceBefore
+                        href="https://tango-adb.github.io/old-demo/"
+                    >
+                        https://tango-adb.github.io/old-demo/
+                    </ExternalLink>
+                </p>
+
+                <DialogFooter>
+                    <PrimaryButton
+                        text="OK"
+                        onClick={() => setDeprecateDialogVisible(false)}
+                    />
+                </DialogFooter>
+            </Dialog>
         </ErrorDialogProvider>
     );
 }
