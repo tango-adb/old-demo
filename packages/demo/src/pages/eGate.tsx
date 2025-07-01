@@ -1,3 +1,4 @@
+```tsx
 import {
     Checkbox,
     PrimaryButton,
@@ -119,16 +120,18 @@ class InstallPageState {
 
             const pm = new PackageManager(GLOBAL_STATE.adb!);
             const start = Date.now();
+
+            // Create a ReadableStream that produces Uint8Array
+            const stream = new ReadableStream<Uint8Array>({
+                start(controller) {
+                    controller.enqueue(new Uint8Array(blob));
+                    controller.close();
+                },
+            }).pipeThrough(new WrapConsumableStream<Uint8Array>());
+
             const log = await pm.installStream(
                 file.size,
-                new ReadableStream({
-                    start(controller) {
-                        controller.enqueue(new Uint8Array(blob));
-                        controller.close();
-                    }
-                })
-                .pipeThrough(new WrapConsumableStream())
-                .pipeThrough(
+                stream.pipeThrough(
                     new ProgressStream(
                         action((uploaded) => {
                             if (uploaded !== file.size) {
@@ -182,7 +185,7 @@ class InstallPageState {
             });
         } catch (error) {
             runInAction(() => {
-                this.log = `Error: ${error.message}`;
+                this.log = `Error: ${(error as Error).message}`;
                 this.installing = false;
                 this.progress = undefined;
             });
@@ -237,3 +240,4 @@ const Install: NextPage = () => {
 };
 
 export default observer(Install);
+```
