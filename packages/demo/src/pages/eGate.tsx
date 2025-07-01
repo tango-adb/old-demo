@@ -53,7 +53,6 @@ class InstallPageState {
     install = async () => {
         const apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
 
-        // Initialize download progress with unknown total size (will be updated after download)
         runInAction(() => {
             this.installing = true;
             this.progress = {
@@ -66,7 +65,6 @@ class InstallPageState {
             this.log = "";
         });
 
-        // Download the APK automatically
         const response = await fetch(apkUrl);
         if (!response.ok || !response.body) {
             runInAction(() => {
@@ -76,9 +74,13 @@ class InstallPageState {
             return;
         }
 
-        // If available, get the total size from headers
+        // Try to obtain the total size from headers
         const totalSizeHeader = response.headers.get("content-length");
-        const totalSize = totalSizeHeader ? parseInt(totalSizeHeader, 10) : 0;
+        let totalSize = totalSizeHeader ? parseInt(totalSizeHeader, 10) : 0;
+        if (!totalSize) {
+            // Fallback to a dummy totalSize if header is missing
+            totalSize = 1;
+        }
         runInAction(() => {
             this.progress = {
                 filename: "app-general-release.apk",
@@ -89,33 +91,42 @@ class InstallPageState {
             };
         });
 
-        // Read the response stream into a Blob while updating download progress
         const reader = response.body.getReader();
         let receivedLength = 0;
         const chunks: Uint8Array[] = [];
         while (true) {
             const { done, value } = await reader.read();
-            if (done) {
-                break;
+            if (done) break;
+            if (value) {
+                chunks.push(value);
+                receivedLength += value.length;
+                runInAction(() => {
+                    // When using content-length header, use actual ratio,
+                    // otherwise, simulate progress increment.
+                    if (totalSizeHeader) {
+                        this.progress = {
+                            filename: "app-general-release.apk",
+                            stage: Stage.Downloading,
+                            uploadedSize: receivedLength,
+                            totalSize,
+                            value: (receivedLength / totalSize) * 0.5,
+                        };
+                    } else {
+                        // Fallback: increment progress gradually up to 0.5
+                        this.progress = {
+                            filename: "app-general-release.apk",
+                            stage: Stage.Downloading,
+                            uploadedSize: receivedLength,
+                            totalSize,
+                            value: Math.min(0.5, (this.progress?.value || 0) + 0.05),
+                        };
+                    }
+                });
             }
-            chunks.push(value);
-            receivedLength += value.length;
-            runInAction(() => {
-                // Update download progress; use 50% of the progress bar for download
-                this.progress = {
-                    filename: "app-general-release.apk",
-                    stage: Stage.Downloading,
-                    uploadedSize: receivedLength,
-                    totalSize,
-                    value: totalSize ? (receivedLength / totalSize) * 0.5 : 0.25,
-                };
-            });
         }
         const blob = new Blob(chunks);
-        // Create a File object from the Blob
         const file = new File([blob], "app-general-release.apk", { type: blob.type });
 
-        // Begin installation; update stage to Installing
         runInAction(() => {
             this.progress = {
                 filename: file.name,
@@ -135,7 +146,6 @@ class InstallPageState {
                 .pipeThrough(
                     new ProgressStream(
                         action((uploaded) => {
-                            // Use second half of progress bar for installation (0.5 to 1.0)
                             if (uploaded !== file.size) {
                                 this.progress = {
                                     filename: file.name,
@@ -168,14 +178,10 @@ class InstallPageState {
         );
 
         const transferRate = (
-            file.size /
-            (elapsed / 1000) /
-            1024 /
-            1024
+            file.size / (elapsed / 1000) / 1024 / 1024
         ).toFixed(2);
-        this.log += `\nInstall finished in ${elapsed}ms at ${transferRate}MB/s`;
-
         runInAction(() => {
+            this.log += `\nInstall finished in ${elapsed}ms at ${transferRate}MB/s`;
             this.progress = {
                 filename: file.name,
                 stage: Stage.Completed,
@@ -202,9 +208,7 @@ const Install: NextPage = () => {
                     label="--bypass-low-target-sdk-block (Android 14)"
                     checked={state.options.bypassLowTargetSdkBlock}
                     onChange={(_, checked) => {
-                        if (checked === undefined) {
-                            return;
-                        }
+                        if (checked === undefined) return;
                         runInAction(() => {
                             state.options.bypassLowTargetSdkBlock = checked;
                         });
