@@ -103,10 +103,10 @@ class InstallPageState {
             const pm = new PackageManager(GLOBAL_STATE.adb!);
             const start = Date.now();
 
-            // FIX: Use WrapConsumableStream.transformer()
+            // The correct usage for your version:
             const stream = apkBlob
                 .stream()
-                .pipeThrough(WrapConsumableStream.transformer())
+                .pipeThrough(new WrapConsumableStream())
                 .pipeThrough(
                     new ProgressStream<Uint8Array>(
                         action((uploaded) => {
