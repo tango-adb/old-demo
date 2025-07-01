@@ -120,10 +120,11 @@ class InstallPageState {
             const pm = new PackageManager(GLOBAL_STATE.adb!);
             const start = Date.now();
 
-            // Create a ReadableStream that produces Uint8Array
+            // Convert Blob to ArrayBuffer and create ReadableStream
+            const arrayBuffer = await blob.arrayBuffer();
             const stream = new ReadableStream<Uint8Array>({
                 start(controller) {
-                    controller.enqueue(new Uint8Array(blob));
+                    controller.enqueue(new Uint8Array(arrayBuffer));
                     controller.close();
                 },
             }).pipeThrough(new WrapConsumableStream<Uint8Array>());
