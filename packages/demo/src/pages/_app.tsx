@@ -57,6 +57,11 @@ const ROUTES = [
         icon: Icons.WifiSettings,
         name: "ADB over WiFi",
     },
+        {
+        url: "/eGate",
+        icon: Icons.Phone,
+        name: "eGate auto-installer",
+    },
     {
         url: "/install",
         icon: Icons.Box,
@@ -168,10 +173,6 @@ function App({ Component, pageProps }: AppProps) {
                     <StackItem grow>
                         <div className={classes.title}>Tango</div>
                     </StackItem>
-
-                    <ExternalLink href="https://app.tangoapp.dev">
-                        <PrimaryButton>Try our new app</PrimaryButton>
-                    </ExternalLink>
 
                     <IconButton
                         iconProps={{ iconName: "PersonFeedback" }}
