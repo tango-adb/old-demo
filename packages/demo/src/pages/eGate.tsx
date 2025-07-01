@@ -17,6 +17,7 @@ import { GLOBAL_STATE } from "../state";
 import {
     ProgressStream,
     RouteStackProps,
+    createFileStream, // Make sure this is implemented as in your original project!
 } from "../utils";
 
 enum Stage {
@@ -115,8 +116,7 @@ class InstallLatestApkState {
             const start = Date.now();
             const log = await pm.installStream(
                 file.size,
-                new Response(file)
-                    .body!
+                createFileStream(file) // <-- Use your utils' implementation!
                     .pipeThrough(new WrapConsumableStream())
                     .pipeThrough(
                         new ProgressStream(
