@@ -8,7 +8,7 @@ on:
     branches: [main]
 
 env:
-  BASE_PATH: /old-demo
+  BASE_PATH: /WADB
 
 jobs:
   build:
