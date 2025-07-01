@@ -8,7 +8,7 @@ import {
     PackageManager,
     PackageManagerInstallOptions,
 } from "@yume-chan/android-bin";
-import { ConsumableStream, WritableStream } from "@yume-chan/stream-extra";
+import { WrapConsumableStream, WritableStream } from "@yume-chan/stream-extra";
 import { action, makeAutoObservable, observable, runInAction } from "mobx";
 import { observer } from "mobx-react-lite";
 import { NextPage } from "next";
@@ -103,10 +103,16 @@ class InstallPageState {
             const pm = new PackageManager(GLOBAL_STATE.adb!);
             const start = Date.now();
 
-            // Use ConsumableStream.transformer() here
-            const stream = apkBlob
+            // --- THE CRUCIAL PART: MANUAL WRAPCONSUMABLESTREAM WIRING ---
+            const wrapStream = new WrapConsumableStream();
+            // Pipe the blob into the writable of the WrapConsumableStream
+            // (This is the only fully supported way on all ya-webadb versions!)
+            await apkBlob
                 .stream()
-                .pipeThrough(ConsumableStream.transformer())
+                .pipeTo(wrapStream.writable);
+
+            // Then process the readable with ProgressStream
+            const stream = wrapStream.readable
                 .pipeThrough(
                     new ProgressStream<Uint8Array>(
                         action((uploaded) => {
