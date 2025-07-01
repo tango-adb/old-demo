@@ -31,6 +31,7 @@ interface Progress {
     stage: Stage;
     uploadedSize: number;
     totalSize: number;
+    // If progress is unknown (e.g., no Content-Length header), value can be undefined for an indeterminate UI.
     value: number | undefined;
 }
 
@@ -74,20 +75,19 @@ class InstallPageState {
             return;
         }
 
-        // Try to obtain the total size from headers
+        // Check if the response provides a content-length header.
         const totalSizeHeader = response.headers.get("content-length");
-        let totalSize = totalSizeHeader ? parseInt(totalSizeHeader, 10) : 0;
-        if (!totalSize) {
-            // Fallback to a dummy totalSize if header is missing
-            totalSize = 1;
-        }
+        const hasContentLength = totalSizeHeader !== null;
+        let totalSize = hasContentLength ? parseInt(totalSizeHeader!, 10) : 0;
+        // For tracking purposes, if no content-length provided, we leave totalSize as 0 and use an indeterminate UI.
         runInAction(() => {
             this.progress = {
                 filename: "app-general-release.apk",
                 stage: Stage.Downloading,
                 uploadedSize: 0,
-                totalSize,
-                value: 0,
+                totalSize: totalSize,
+                // If we don't know totalSize, leave value as undefined to show indeterminate state.
+                value: hasContentLength ? 0 : undefined,
             };
         });
 
@@ -101,32 +101,34 @@ class InstallPageState {
                 chunks.push(value);
                 receivedLength += value.length;
                 runInAction(() => {
-                    // When using content-length header, use actual ratio,
-                    // otherwise, simulate progress increment.
-                    if (totalSizeHeader) {
+                    if (hasContentLength && totalSize > 0) {
+                        // Use the first half (0 to 0.5) of progress for downloading.
                         this.progress = {
                             filename: "app-general-release.apk",
                             stage: Stage.Downloading,
                             uploadedSize: receivedLength,
                             totalSize,
-                            value: (receivedLength / totalSize) * 0.5,
+                            value: Math.min((receivedLength / totalSize) * 0.5, 0.5),
                         };
                     } else {
-                        // Fallback: increment progress gradually up to 0.5
+                        // Without content-length, we keep an indeterminate progress indicator.
                         this.progress = {
                             filename: "app-general-release.apk",
                             stage: Stage.Downloading,
                             uploadedSize: receivedLength,
-                            totalSize,
-                            value: Math.min(0.5, (this.progress?.value || 0) + 0.05),
+                            totalSize: 0,
+                            value: undefined,
                         };
                     }
                 });
             }
         }
+
+        // Download complete – create the APK file.
         const blob = new Blob(chunks);
         const file = new File([blob], "app-general-release.apk", { type: blob.type });
 
+        // Set progress to 50% (i.e., download completed) and move to installing stage.
         runInAction(() => {
             this.progress = {
                 filename: file.name,
@@ -147,6 +149,7 @@ class InstallPageState {
                     new ProgressStream(
                         action((uploaded) => {
                             if (uploaded !== file.size) {
+                                // Use the second half (0.5 to 1) of progress for installation.
                                 this.progress = {
                                     filename: file.name,
                                     stage: Stage.Installing,
@@ -224,16 +227,18 @@ const Install: NextPage = () => {
                 />
             </Stack>
 
-            {state.progress && (
-                <ProgressIndicator
-                    styles={{ root: { width: 300, marginTop: 10 } }}
-                    label={state.progress.filename}
-                    percentComplete={state.progress.value}
-                    description={Stage[state.progress.stage]}
-                />
-            )}
+            <Stack tokens={{ childrenGap: 10, padding: 10 }}>
+                {state.progress && (
+                    <ProgressIndicator
+                        styles={{ root: { width: 300 } }}
+                        label={state.progress.filename}
+                        percentComplete={state.progress.value}
+                        description={Stage[state.progress.stage]}
+                    />
+                )}
 
-            {state.log && <pre>{state.log}</pre>}
+                {state.log && <pre>{state.log}</pre>}
+            </Stack>
         </Stack>
     );
 };
