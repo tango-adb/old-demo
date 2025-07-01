@@ -103,18 +103,15 @@ class InstallPageState {
             const pm = new PackageManager(GLOBAL_STATE.adb!);
             const start = Date.now();
 
-            // --- THE CRUCIAL PART: MANUAL WRAPCONSUMABLESTREAM WIRING ---
+            // Version-agnostic, type-safe stream wiring:
             const wrapStream = new WrapConsumableStream();
-            // Pipe the blob into the writable of the WrapConsumableStream
-            // (This is the only fully supported way on all ya-webadb versions!)
             await apkBlob
                 .stream()
                 .pipeTo(wrapStream.writable);
 
-            // Then process the readable with ProgressStream
             const stream = wrapStream.readable
                 .pipeThrough(
-                    new ProgressStream<Uint8Array>(
+                    new ProgressStream(
                         action((uploaded) => {
                             if (uploaded !== apkBlob.size) {
                                 this.progress = {
