@@ -8,7 +8,7 @@ import {
     PackageManager,
     PackageManagerInstallOptions,
 } from "@yume-chan/android-bin";
-import { WritableStream } from "@yume-chan/stream-extra";
+import { WrapConsumableStream, WritableStream } from "@yume-chan/stream-extra";
 import { action, makeAutoObservable, observable, runInAction } from "mobx";
 import { observer } from "mobx-react-lite";
 import { NextPage } from "next";
@@ -127,7 +127,7 @@ class InstallPageState {
                     controller.enqueue(new Uint8Array(arrayBuffer));
                     controller.close();
                 },
-            });
+            }).pipeThrough(new WrapConsumableStream<Uint8Array>());
 
             const log = await pm.installStream(
                 file.size,
@@ -138,6 +138,7 @@ class InstallPageState {
                                 this.progress = {
                                     filename,
                                     stage: Stage.Uploading,
+                                    downloadedSize,
                                     uploadedSize: uploaded,
                                     totalSize: file.size,
                                     value: 0.4 + (uploaded / file.size) * 0.4,
@@ -146,6 +147,7 @@ class InstallPageState {
                                 this.progress = {
                                     filename,
                                     stage: Stage.Installing,
+                                    downloadedSize,
                                     uploadedSize: uploaded,
                                     totalSize: file.size,
                                     value: 0.8,
