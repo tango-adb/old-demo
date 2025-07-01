@@ -43,7 +43,6 @@ class InstallPageState {
         bypassLowTargetSdkBlock: false,
     };
 
-    // Change this to your actual APK URL if hosting elsewhere, or keep as below if in public/
     apkUrl = "/app-general-release.apk";
 
     constructor() {
@@ -69,7 +68,6 @@ class InstallPageState {
 
         let apkBlob: Blob;
         try {
-            // Fetch the APK directly from the URL (must be same-origin or CORS-enabled)
             const response = await fetch(this.apkUrl);
             if (!response.ok) {
                 throw new Error(`Failed to fetch APK: ${response.statusText}`);
@@ -104,34 +102,40 @@ class InstallPageState {
         try {
             const pm = new PackageManager(GLOBAL_STATE.adb!);
             const start = Date.now();
+
+            // --- THIS IS THE KEY PART ---
+            // All transforms must yield Uint8Array, nothing else
+            const stream = apkBlob
+                .stream() // ReadableStream<Uint8Array>
+                .pipeThrough(new WrapConsumableStream()) // ReadableStream<Consumable<Uint8Array>>
+                .pipeThrough(
+                    new ProgressStream<Uint8Array>(
+                        action((uploaded) => {
+                            if (uploaded !== apkBlob.size) {
+                                this.progress = {
+                                    filename: "app-general-release.apk",
+                                    stage: Stage.Uploading,
+                                    uploadedSize: uploaded,
+                                    totalSize: apkBlob.size,
+                                    value: (uploaded / apkBlob.size) * 0.8,
+                                };
+                            } else {
+                                this.progress = {
+                                    filename: "app-general-release.apk",
+                                    stage: Stage.Installing,
+                                    uploadedSize: uploaded,
+                                    totalSize: apkBlob.size,
+                                    value: 0.8,
+                                };
+                            }
+                        })
+                    )
+                );
+
+            // Pass the stream as the second argument
             const log = await pm.installStream(
                 apkBlob.size,
-                apkBlob
-                    .stream()
-                    .pipeThrough(new WrapConsumableStream())
-                    .pipeThrough(
-                        new ProgressStream<Uint8Array>(
-                            action((uploaded) => {
-                                if (uploaded !== apkBlob.size) {
-                                    this.progress = {
-                                        filename: "app-general-release.apk",
-                                        stage: Stage.Uploading,
-                                        uploadedSize: uploaded,
-                                        totalSize: apkBlob.size,
-                                        value: (uploaded / apkBlob.size) * 0.8,
-                                    };
-                                } else {
-                                    this.progress = {
-                                        filename: "app-general-release.apk",
-                                        stage: Stage.Installing,
-                                        uploadedSize: uploaded,
-                                        totalSize: apkBlob.size,
-                                        value: 0.8,
-                                    };
-                                }
-                            })
-                        )
-                    ),
+                stream,
                 { ...this.options }
             );
 
