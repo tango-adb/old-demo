@@ -5,7 +5,6 @@ import {
 } from "@fluentui/react";
 import {
     PackageManager,
-    PackageManagerInstallOptions,
 } from "@yume-chan/android-bin";
 import { WrapConsumableStream, WritableStream } from "@yume-chan/stream-extra";
 import { action, makeAutoObservable, observable, runInAction } from "mobx";
@@ -18,9 +17,10 @@ import {
     RouteStackProps,
     createFileStream,
 } from "../utils";
+import React from "react";
 
 enum Stage {
-    Downloading,
+    WaitingForFile,
     Uploading,
     Installing,
     Completed,
@@ -38,27 +38,25 @@ class InstallEGateState {
     installing = false;
     progress: Progress | undefined = undefined;
     log: string = "";
-    
-    // eGate MDM APK URL - replace with actual URL
-    private readonly EGATE_APK_URL = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
-    private readonly INSTALL_DATE = "2025-07-01 00:41:06"; // Updated timestamp
-    private readonly USERNAME = "JMTDI"; // Current user
+
+    private readonly INSTALL_DATE = "2025-07-01 00:41:06";
+    private readonly USERNAME = "JMTDI";
 
     constructor() {
         makeAutoObservable(this, {
             progress: observable.ref,
-            install: false,
+            installFromFile: false,
         });
     }
 
-    install = async () => {
+    installFromFile = async (file: File) => {
         runInAction(() => {
             this.installing = true;
             this.progress = {
-                filename: "eGate MDM",
-                stage: Stage.Downloading,
+                filename: file.name,
+                stage: Stage.Uploading,
                 uploadedSize: 0,
-                totalSize: 0,
+                totalSize: file.size,
                 value: 0,
             };
             this.log = `Starting eGate MDM installation at ${this.INSTALL_DATE}\n`;
@@ -66,26 +64,6 @@ class InstallEGateState {
         });
 
         try {
-            // Download the APK
-            const response = await fetch(this.EGATE_APK_URL);
-            if (!response.ok) {
-                throw new Error(`Failed to download APK: ${response.statusText}`);
-            }
-
-            const fileSize = Number(response.headers.get("content-length"));
-            const fileBlob = await response.blob();
-            const file = new File([fileBlob], "egate.apk", { type: "application/vnd.android.package-archive" });
-
-            runInAction(() => {
-                this.progress = {
-                    filename: file.name,
-                    stage: Stage.Uploading,
-                    uploadedSize: 0,
-                    totalSize: file.size,
-                    value: 0,
-                };
-            });
-
             const pm = new PackageManager(GLOBAL_STATE.adb!);
             const start = Date.now();
             const log = await pm.installStream(
@@ -166,6 +144,15 @@ class InstallEGateState {
 const state = new InstallEGateState();
 
 const InstallEGate: NextPage = () => {
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            await state.installFromFile(file);
+        }
+    };
+
     return (
         <Stack {...RouteStackProps}>
             <Head>
@@ -175,8 +162,15 @@ const InstallEGate: NextPage = () => {
             <Stack horizontal>
                 <PrimaryButton
                     disabled={!GLOBAL_STATE.adb || state.installing}
-                    text="Install eGate MDM"
-                    onClick={state.install}
+                    text="Select eGate MDM APK"
+                    onClick={() => fileInputRef.current?.click()}
+                />
+                <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".apk,application/vnd.android.package-archive"
+                    style={{ display: "none" }}
+                    onChange={handleFileChange}
                 />
             </Stack>
 
