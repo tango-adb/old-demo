@@ -17,7 +17,6 @@ import { GLOBAL_STATE } from "../state";
 import {
     ProgressStream,
     RouteStackProps,
-    createFileStream,
 } from "../utils";
 
 enum Stage {
@@ -25,7 +24,6 @@ enum Stage {
     Uploading,
     Installing,
     Completed,
-    Error,
 }
 
 interface Progress {
@@ -36,10 +34,6 @@ interface Progress {
     value: number | undefined;
 }
 
-const APK_FILENAME = "app-general-release.apk";
-// Use your proxy API route for CORS-safe download
-const APK_PROXY_URL = "/api/proxy-apk";
-
 class InstallPageState {
     installing = false;
     progress: Progress | undefined = undefined;
@@ -47,6 +41,8 @@ class InstallPageState {
     options: Partial<PackageManagerInstallOptions> = {
         bypassLowTargetSdkBlock: false,
     };
+
+    apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
 
     constructor() {
         makeAutoObservable(this, {
@@ -60,87 +56,75 @@ class InstallPageState {
         runInAction(() => {
             this.installing = true;
             this.progress = {
-                filename: APK_FILENAME,
+                filename: "app-general-release.apk",
                 stage: Stage.Downloading,
                 uploadedSize: 0,
                 totalSize: 0,
                 value: 0,
             };
-            this.log = "";
+            this.log = "Downloading APK from server...\n";
+        });
+
+        let apkBlob: Blob;
+        try {
+            // Fetch the APK directly from the URL
+            const response = await fetch(this.apkUrl);
+            if (!response.ok) {
+                throw new Error(`Failed to fetch APK: ${response.statusText}`);
+            }
+            // Optionally, track download progress here if you want (with streams)
+            apkBlob = await response.blob();
+        } catch (e: any) {
+            runInAction(() => {
+                this.log += `Error downloading APK: ${e?.message || e}\n`;
+                this.installing = false;
+            });
+            return;
+        }
+
+        runInAction(() => {
+            this.progress = {
+                filename: "app-general-release.apk",
+                stage: Stage.Uploading,
+                uploadedSize: 0,
+                totalSize: apkBlob.size,
+                value: 0,
+            };
+            this.log += "Uploading APK to device...\n";
         });
 
         try {
-            // Download the APK from the local proxy endpoint
-            const response = await fetch(APK_PROXY_URL);
-            if (!response.ok || !response.body) {
-                throw new Error(`Failed to fetch APK: ${response.statusText}`);
-            }
-            const contentLength = Number(response.headers.get("content-length") ?? "0");
-            const reader = response.body.getReader();
-            const chunks: Uint8Array[] = [];
-            let received = 0;
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                if (value) {
-                    chunks.push(value);
-                    received += value.length;
-                    runInAction(() => {
-                        if (this.progress) {
-                            this.progress.stage = Stage.Downloading;
-                            this.progress.uploadedSize = received;
-                            this.progress.totalSize = contentLength;
-                            this.progress.value =
-                                contentLength > 0 ? (received / contentLength) * 0.3 : undefined;
-                        }
-                    });
-                }
-            }
-
-            const blob = new Blob(chunks, { type: "application/vnd.android.package-archive" });
-            const file = new File([blob], APK_FILENAME, {
-                type: "application/vnd.android.package-archive",
-            });
-
-            runInAction(() => {
-                if (this.progress) {
-                    this.progress.stage = Stage.Uploading;
-                    this.progress.uploadedSize = 0;
-                    this.progress.totalSize = file.size;
-                    this.progress.value = 0.3;
-                }
-            });
-
-            // Install the APK using the ADB stream pipeline
             const pm = new PackageManager(GLOBAL_STATE.adb!);
             const start = Date.now();
             const log = await pm.installStream(
-                file.size,
-                createFileStream(file)
+                apkBlob.size,
+                apkBlob
+                    .stream()
                     .pipeThrough(new WrapConsumableStream())
                     .pipeThrough(
                         new ProgressStream(
                             action((uploaded) => {
-                                if (uploaded !== file.size) {
-                                    if (this.progress) {
-                                        this.progress.stage = Stage.Uploading;
-                                        this.progress.uploadedSize = uploaded;
-                                        this.progress.totalSize = file.size;
-                                        this.progress.value =
-                                            0.3 + (uploaded / file.size) * 0.5;
-                                    }
+                                if (uploaded !== apkBlob.size) {
+                                    this.progress = {
+                                        filename: "app-general-release.apk",
+                                        stage: Stage.Uploading,
+                                        uploadedSize: uploaded,
+                                        totalSize: apkBlob.size,
+                                        value: (uploaded / apkBlob.size) * 0.8,
+                                    };
                                 } else {
-                                    if (this.progress) {
-                                        this.progress.stage = Stage.Installing;
-                                        this.progress.uploadedSize = uploaded;
-                                        this.progress.totalSize = file.size;
-                                        this.progress.value = 0.8;
-                                    }
+                                    this.progress = {
+                                        filename: "app-general-release.apk",
+                                        stage: Stage.Installing,
+                                        uploadedSize: uploaded,
+                                        totalSize: apkBlob.size,
+                                        value: 0.8,
+                                    };
                                 }
                             })
                         )
-                    )
+                    ),
+                { ...this.options }
             );
 
             const elapsed = Date.now() - start;
@@ -153,7 +137,7 @@ class InstallPageState {
             );
 
             const transferRate = (
-                file.size /
+                apkBlob.size /
                 (elapsed / 1000) /
                 1024 /
                 1024
@@ -161,19 +145,20 @@ class InstallPageState {
             this.log += `Install finished in ${elapsed}ms at ${transferRate}MB/s`;
 
             runInAction(() => {
-                if (this.progress) {
-                    this.progress.stage = Stage.Completed;
-                    this.progress.uploadedSize = file.size;
-                    this.progress.totalSize = file.size;
-                    this.progress.value = 1;
-                }
+                this.progress = {
+                    filename: "app-general-release.apk",
+                    stage: Stage.Completed,
+                    uploadedSize: apkBlob.size,
+                    totalSize: apkBlob.size,
+                    value: 1,
+                };
                 this.installing = false;
             });
         } catch (e: any) {
             runInAction(() => {
                 this.log += "\nError: " + (e?.message || e);
                 if (this.progress) {
-                    this.progress.stage = Stage.Error;
+                    this.progress.stage = Stage.Completed;
                     this.progress.value = undefined;
                 }
                 this.installing = false;
@@ -188,7 +173,7 @@ const Install: NextPage = () => {
     return (
         <Stack {...RouteStackProps}>
             <Head>
-                <title>Install APK - eGate</title>
+                <title>Install APK - Tango</title>
             </Head>
 
             <Stack horizontal>
@@ -209,7 +194,7 @@ const Install: NextPage = () => {
             <Stack horizontal>
                 <PrimaryButton
                     disabled={!GLOBAL_STATE.adb || state.installing}
-                    text="Install Latest APK"
+                    text="Download and Install APK"
                     onClick={state.install}
                 />
             </Stack>
