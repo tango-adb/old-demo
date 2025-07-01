@@ -1,4 +1,3 @@
-```tsx
 import {
     Checkbox,
     PrimaryButton,
@@ -240,4 +239,3 @@ const Install: NextPage = () => {
 };
 
 export default observer(Install);
-```
