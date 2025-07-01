@@ -1,10 +1,12 @@
 import {
+    Checkbox,
     PrimaryButton,
     ProgressIndicator,
     Stack,
 } from "@fluentui/react";
 import {
     PackageManager,
+    PackageManagerInstallOptions,
 } from "@yume-chan/android-bin";
 import { WrapConsumableStream, WritableStream } from "@yume-chan/stream-extra";
 import { action, makeAutoObservable, observable, runInAction } from "mobx";
@@ -15,7 +17,6 @@ import { GLOBAL_STATE } from "../state";
 import {
     ProgressStream,
     RouteStackProps,
-    createFileStream,
 } from "../utils";
 
 enum Stage {
@@ -23,6 +24,7 @@ enum Stage {
     Uploading,
     Installing,
     Completed,
+    Error,
 }
 
 interface Progress {
@@ -33,21 +35,22 @@ interface Progress {
     value: number | undefined;
 }
 
-class InstallEGateState {
+const APK_URL =
+    "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
+
+class InstallLatestApkState {
     installing = false;
     progress: Progress | undefined = undefined;
     log: string = "";
-
-    // eGate MDM APK URL
-    private readonly EGATE_APK_URL =
-        "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
-    private readonly INSTALL_DATE = "2025-07-01 00:41:06";
-    private readonly USERNAME = "JMTDI";
+    options: Partial<PackageManagerInstallOptions> = {
+        bypassLowTargetSdkBlock: false,
+    };
 
     constructor() {
         makeAutoObservable(this, {
             progress: observable.ref,
             install: false,
+            options: observable.deep,
         });
     }
 
@@ -55,62 +58,84 @@ class InstallEGateState {
         runInAction(() => {
             this.installing = true;
             this.progress = {
-                filename: "eGate MDM",
+                filename: APK_URL.split("/").pop() ?? "app-general-release.apk",
                 stage: Stage.Downloading,
                 uploadedSize: 0,
                 totalSize: 0,
                 value: 0,
             };
-            this.log = `Starting eGate MDM installation at ${this.INSTALL_DATE}\n`;
-            this.log += `Installation initiated by user: ${this.USERNAME}\n`;
+            this.log = "";
         });
 
         try {
             // Download the APK
-            const response = await fetch("/api/proxy-egate-apk");
-            if (!response.ok) {
-                throw new Error(`Failed to download APK: ${response.statusText}`);
+            const response = await fetch(APK_URL);
+            if (!response.ok || !response.body) {
+                throw new Error(`Failed to fetch APK: ${response.statusText}`);
+            }
+            const contentLength = Number(response.headers.get("content-length") ?? "0");
+            const reader = response.body.getReader();
+            const chunks: Uint8Array[] = [];
+            let received = 0;
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (value) {
+                    chunks.push(value);
+                    received += value.length;
+                    runInAction(() => {
+                        if (this.progress) {
+                            this.progress.stage = Stage.Downloading;
+                            this.progress.uploadedSize = received;
+                            this.progress.totalSize = contentLength;
+                            this.progress.value =
+                                contentLength > 0 ? (received / contentLength) * 0.3 : undefined;
+                        }
+                    });
+                }
             }
 
-            const fileSize = Number(response.headers.get("content-length"));
-            const fileBlob = await response.blob();
-            const file = new File([fileBlob], "egate.apk", { type: "application/vnd.android.package-archive" });
-
-            runInAction(() => {
-                this.progress = {
-                    filename: file.name,
-                    stage: Stage.Uploading,
-                    uploadedSize: 0,
-                    totalSize: file.size,
-                    value: 0,
-                };
+            const blob = new Blob(chunks, { type: "application/vnd.android.package-archive" });
+            const file = new File([blob], APK_URL.split("/").pop() ?? "app-general-release.apk", {
+                type: "application/vnd.android.package-archive",
             });
 
+            runInAction(() => {
+                if (this.progress) {
+                    this.progress.stage = Stage.Uploading;
+                    this.progress.uploadedSize = 0;
+                    this.progress.totalSize = file.size;
+                    this.progress.value = 0.3;
+                }
+            });
+
+            // Install the APK
             const pm = new PackageManager(GLOBAL_STATE.adb!);
             const start = Date.now();
             const log = await pm.installStream(
                 file.size,
-                createFileStream(file)
+                new Response(file)
+                    .body!
                     .pipeThrough(new WrapConsumableStream())
                     .pipeThrough(
                         new ProgressStream(
                             action((uploaded) => {
                                 if (uploaded !== file.size) {
-                                    this.progress = {
-                                        filename: file.name,
-                                        stage: Stage.Uploading,
-                                        uploadedSize: uploaded,
-                                        totalSize: file.size,
-                                        value: (uploaded / file.size) * 0.8,
-                                    };
+                                    if (this.progress) {
+                                        this.progress.stage = Stage.Uploading;
+                                        this.progress.uploadedSize = uploaded;
+                                        this.progress.totalSize = file.size;
+                                        this.progress.value =
+                                            0.3 + (uploaded / file.size) * 0.5;
+                                    }
                                 } else {
-                                    this.progress = {
-                                        filename: file.name,
-                                        stage: Stage.Installing,
-                                        uploadedSize: uploaded,
-                                        totalSize: file.size,
-                                        value: 0.8,
-                                    };
+                                    if (this.progress) {
+                                        this.progress.stage = Stage.Installing;
+                                        this.progress.uploadedSize = uploaded;
+                                        this.progress.totalSize = file.size;
+                                        this.progress.value = 0.8;
+                                    }
                                 }
                             })
                         )
@@ -132,50 +157,58 @@ class InstallEGateState {
                 1024 /
                 1024
             ).toFixed(2);
-            this.log += `\nInstall finished in ${elapsed}ms at ${transferRate}MB/s`;
+            this.log += `Install finished in ${elapsed}ms at ${transferRate}MB/s`;
 
             runInAction(() => {
-                this.progress = {
-                    filename: file.name,
-                    stage: Stage.Completed,
-                    uploadedSize: file.size,
-                    totalSize: file.size,
-                    value: 1,
-                };
+                if (this.progress) {
+                    this.progress.stage = Stage.Completed;
+                    this.progress.uploadedSize = file.size;
+                    this.progress.totalSize = file.size;
+                    this.progress.value = 1;
+                }
                 this.installing = false;
             });
-        } catch (error: unknown) {
+        } catch (e: any) {
             runInAction(() => {
-                let errorMessage: string;
-                if (error instanceof Error) {
-                    errorMessage = error.message;
-                } else if (error && typeof error === "object" && "message" in error) {
-                    errorMessage = String(error.message);
-                } else if (typeof error === "string") {
-                    errorMessage = error;
-                } else {
-                    errorMessage = "An unknown error occurred";
+                this.log += "\nError: " + (e?.message || e);
+                if (this.progress) {
+                    this.progress.stage = Stage.Error;
+                    this.progress.value = undefined;
                 }
-                this.log += `\nError: ${errorMessage}`;
                 this.installing = false;
             });
         }
     };
 }
 
-const state = new InstallEGateState();
+const state = new InstallLatestApkState();
 
-const InstallEGate: NextPage = () => {
+const AutoInstallLatestApk: NextPage = () => {
     return (
         <Stack {...RouteStackProps}>
             <Head>
-                <title>Install eGate MDM - Ya-WebADB</title>
+                <title>Install Latest APK - eGate</title>
             </Head>
+
+            <Stack horizontal>
+                <Checkbox
+                    label="--bypass-low-target-sdk-block (Android 14)"
+                    checked={state.options.bypassLowTargetSdkBlock}
+                    onChange={(_, checked) => {
+                        if (checked === undefined) {
+                            return;
+                        }
+                        runInAction(() => {
+                            state.options.bypassLowTargetSdkBlock = checked;
+                        });
+                    }}
+                />
+            </Stack>
 
             <Stack horizontal>
                 <PrimaryButton
                     disabled={!GLOBAL_STATE.adb || state.installing}
-                    text="Install eGate MDM"
+                    text="Install Latest APK"
                     onClick={state.install}
                 />
             </Stack>
@@ -194,4 +227,4 @@ const InstallEGate: NextPage = () => {
     );
 };
 
-export default observer(InstallEGate);
+export default observer(AutoInstallLatestApk);
