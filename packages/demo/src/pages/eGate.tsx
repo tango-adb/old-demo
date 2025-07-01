@@ -17,7 +17,7 @@ import { GLOBAL_STATE } from "../state";
 import {
     ProgressStream,
     RouteStackProps,
-    createFileStream, // Make sure this is implemented as in your original project!
+    createFileStream,
 } from "../utils";
 
 enum Stage {
@@ -36,10 +36,11 @@ interface Progress {
     value: number | undefined;
 }
 
-const APK_URL =
-    "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
+const APK_FILENAME = "app-general-release.apk";
+// Use your proxy API route for CORS-safe download
+const APK_PROXY_URL = "/api/proxy-apk";
 
-class InstallLatestApkState {
+class InstallPageState {
     installing = false;
     progress: Progress | undefined = undefined;
     log: string = "";
@@ -59,7 +60,7 @@ class InstallLatestApkState {
         runInAction(() => {
             this.installing = true;
             this.progress = {
-                filename: APK_URL.split("/").pop() ?? "app-general-release.apk",
+                filename: APK_FILENAME,
                 stage: Stage.Downloading,
                 uploadedSize: 0,
                 totalSize: 0,
@@ -69,8 +70,8 @@ class InstallLatestApkState {
         });
 
         try {
-            // Download the APK
-            const response = await fetch(APK_URL);
+            // Download the APK from the local proxy endpoint
+            const response = await fetch(APK_PROXY_URL);
             if (!response.ok || !response.body) {
                 throw new Error(`Failed to fetch APK: ${response.statusText}`);
             }
@@ -98,7 +99,7 @@ class InstallLatestApkState {
             }
 
             const blob = new Blob(chunks, { type: "application/vnd.android.package-archive" });
-            const file = new File([blob], APK_URL.split("/").pop() ?? "app-general-release.apk", {
+            const file = new File([blob], APK_FILENAME, {
                 type: "application/vnd.android.package-archive",
             });
 
@@ -111,12 +112,12 @@ class InstallLatestApkState {
                 }
             });
 
-            // Install the APK
+            // Install the APK using the ADB stream pipeline
             const pm = new PackageManager(GLOBAL_STATE.adb!);
             const start = Date.now();
             const log = await pm.installStream(
                 file.size,
-                createFileStream(file) // <-- Use your utils' implementation!
+                createFileStream(file)
                     .pipeThrough(new WrapConsumableStream())
                     .pipeThrough(
                         new ProgressStream(
@@ -181,13 +182,13 @@ class InstallLatestApkState {
     };
 }
 
-const state = new InstallLatestApkState();
+const state = new InstallPageState();
 
-const AutoInstallLatestApk: NextPage = () => {
+const Install: NextPage = () => {
     return (
         <Stack {...RouteStackProps}>
             <Head>
-                <title>Install Latest APK - eGate</title>
+                <title>Install APK - eGate</title>
             </Head>
 
             <Stack horizontal>
@@ -227,4 +228,4 @@ const AutoInstallLatestApk: NextPage = () => {
     );
 };
 
-export default observer(AutoInstallLatestApk);
+export default observer(Install);
