@@ -43,6 +43,7 @@ class InstallPageState {
         bypassLowTargetSdkBlock: false,
     };
 
+    // Change this to your actual APK URL if hosting elsewhere, or keep as below if in public/
     apkUrl = "/app-general-release.apk";
 
     constructor() {
@@ -68,6 +69,7 @@ class InstallPageState {
 
         let apkBlob: Blob;
         try {
+            // Fetch the APK directly from the URL (must be same-origin or CORS-enabled)
             const response = await fetch(this.apkUrl);
             if (!response.ok) {
                 throw new Error(`Failed to fetch APK: ${response.statusText}`);
@@ -108,7 +110,7 @@ class InstallPageState {
                     .stream()
                     .pipeThrough(new WrapConsumableStream())
                     .pipeThrough(
-                        new ProgressStream(
+                        new ProgressStream<Uint8Array>(
                             action((uploaded) => {
                                 if (uploaded !== apkBlob.size) {
                                     this.progress = {
