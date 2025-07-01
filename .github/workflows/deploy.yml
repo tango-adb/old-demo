@@ -27,8 +27,6 @@ jobs:
         with:
           version: 8
           run_install: true
-          
-      - run: pnpm install node-fetch
 
       - run: pnpm recursive run build
 
