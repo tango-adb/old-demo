@@ -8,7 +8,7 @@ import {
     PackageManager,
     PackageManagerInstallOptions,
 } from "@yume-chan/android-bin";
-import { WrapConsumableStream, WritableStream } from "@yume-chan/stream-extra";
+import { createConsumableStream, WritableStream } from "@yume-chan/stream-extra";
 import { action, makeAutoObservable, observable, runInAction } from "mobx";
 import { observer } from "mobx-react-lite";
 import { NextPage } from "next";
@@ -24,6 +24,7 @@ enum Stage {
     Uploading,
     Installing,
     Completed,
+    Error,
 }
 
 interface Progress {
@@ -42,7 +43,8 @@ class InstallPageState {
         bypassLowTargetSdkBlock: false,
     };
 
-    apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
+    // Change this to your actual APK URL if hosting elsewhere, or keep as below if in public/
+    apkUrl = "/app-general-release.apk";
 
     constructor() {
         makeAutoObservable(this, {
@@ -67,17 +69,23 @@ class InstallPageState {
 
         let apkBlob: Blob;
         try {
-            // Fetch the APK directly from the URL
+            // Fetch the APK directly from the URL (must be same-origin or CORS-enabled)
             const response = await fetch(this.apkUrl);
             if (!response.ok) {
                 throw new Error(`Failed to fetch APK: ${response.statusText}`);
             }
-            // Optionally, track download progress here if you want (with streams)
             apkBlob = await response.blob();
         } catch (e: any) {
             runInAction(() => {
                 this.log += `Error downloading APK: ${e?.message || e}\n`;
                 this.installing = false;
+                this.progress = {
+                    filename: "app-general-release.apk",
+                    stage: Stage.Error,
+                    uploadedSize: 0,
+                    totalSize: 0,
+                    value: undefined,
+                };
             });
             return;
         }
@@ -98,9 +106,7 @@ class InstallPageState {
             const start = Date.now();
             const log = await pm.installStream(
                 apkBlob.size,
-                apkBlob
-                    .stream()
-                    .pipeThrough(new WrapConsumableStream())
+                createConsumableStream(apkBlob.stream())
                     .pipeThrough(
                         new ProgressStream(
                             action((uploaded) => {
@@ -158,7 +164,7 @@ class InstallPageState {
             runInAction(() => {
                 this.log += "\nError: " + (e?.message || e);
                 if (this.progress) {
-                    this.progress.stage = Stage.Completed;
+                    this.progress.stage = Stage.Error;
                     this.progress.value = undefined;
                 }
                 this.installing = false;
@@ -173,7 +179,7 @@ const Install: NextPage = () => {
     return (
         <Stack {...RouteStackProps}>
             <Head>
-                <title>Install APK - Tango</title>
+                <title>Install APK - eGate</title>
             </Head>
 
             <Stack horizontal>
