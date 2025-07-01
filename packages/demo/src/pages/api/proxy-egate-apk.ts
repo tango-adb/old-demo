@@ -13,12 +13,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
         res.setHeader("Content-Type", "application/vnd.android.package-archive");
         res.setHeader("Content-Disposition", "attachment; filename=egate.apk");
-        // Allow any origin for CORS (optional, since Next.js API is same-origin by default)
-        res.setHeader("Access-Control-Allow-Origin", "*");
+        // Optionally set CORS if needed
+        // res.setHeader("Access-Control-Allow-Origin", "*");
 
         // Stream the response to the client
         if (response.body) {
-            response.body.pipe(res);
+            const reader = response.body.getReader();
+            res.status(200);
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                if (value) res.write(Buffer.from(value));
+            }
+            res.end();
         } else {
             const buffer = await response.arrayBuffer();
             res.send(Buffer.from(buffer));
