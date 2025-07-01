@@ -31,7 +31,6 @@ interface Progress {
     stage: Stage;
     uploadedSize: number;
     totalSize: number;
-    // If progress is unknown (e.g., no Content-Length header), value can be undefined for an indeterminate UI.
     value: number | undefined;
 }
 
@@ -66,7 +65,12 @@ class InstallPageState {
             this.log = "";
         });
 
-        const response = await fetch(apkUrl);
+        // Use additional fetch options to ensure proper redirection and CORS handling.
+        const response = await fetch(apkUrl, {
+            method: "GET",
+            mode: "cors",
+            redirect: "follow",
+        });
         if (!response.ok || !response.body) {
             runInAction(() => {
                 this.log = "Failed to download APK.";
@@ -75,19 +79,17 @@ class InstallPageState {
             return;
         }
 
-        // Check if the response provides a content-length header.
+        // Check for content-length header.
         const totalSizeHeader = response.headers.get("content-length");
         const hasContentLength = totalSizeHeader !== null;
         let totalSize = hasContentLength ? parseInt(totalSizeHeader!, 10) : 0;
-        // For tracking purposes, if no content-length provided, we leave totalSize as 0 and use an indeterminate UI.
         runInAction(() => {
             this.progress = {
                 filename: "app-general-release.apk",
                 stage: Stage.Downloading,
                 uploadedSize: 0,
-                totalSize: totalSize,
-                // If we don't know totalSize, leave value as undefined to show indeterminate state.
-                value: hasContentLength ? 0 : undefined,
+                totalSize,
+                value: hasContentLength ? 0 : undefined, // undefined will trigger an indeterminate indicator in the UI.
             };
         });
 
@@ -102,7 +104,6 @@ class InstallPageState {
                 receivedLength += value.length;
                 runInAction(() => {
                     if (hasContentLength && totalSize > 0) {
-                        // Use the first half (0 to 0.5) of progress for downloading.
                         this.progress = {
                             filename: "app-general-release.apk",
                             stage: Stage.Downloading,
@@ -111,7 +112,7 @@ class InstallPageState {
                             value: Math.min((receivedLength / totalSize) * 0.5, 0.5),
                         };
                     } else {
-                        // Without content-length, we keep an indeterminate progress indicator.
+                        // Update an indeterminate progress incrementally
                         this.progress = {
                             filename: "app-general-release.apk",
                             stage: Stage.Downloading,
@@ -124,11 +125,11 @@ class InstallPageState {
             }
         }
 
-        // Download complete – create the APK file.
+        // Assemble the downloaded chunks into a Blob and then a File.
         const blob = new Blob(chunks);
         const file = new File([blob], "app-general-release.apk", { type: blob.type });
 
-        // Set progress to 50% (i.e., download completed) and move to installing stage.
+        // Mark download complete by setting progress to 50%.
         runInAction(() => {
             this.progress = {
                 filename: file.name,
@@ -149,7 +150,6 @@ class InstallPageState {
                     new ProgressStream(
                         action((uploaded) => {
                             if (uploaded !== file.size) {
-                                // Use the second half (0.5 to 1) of progress for installation.
                                 this.progress = {
                                     filename: file.name,
                                     stage: Stage.Installing,
