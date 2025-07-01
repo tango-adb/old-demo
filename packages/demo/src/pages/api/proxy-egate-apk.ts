@@ -1,35 +1,14 @@
-import type { NextApiRequest, NextApiResponse } from "next";
-
-const EGATE_APK_URL =
-  "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  try {
-    const response = await fetch(EGATE_APK_URL);
+    const apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
+    const response = await fetch(apkUrl);
     if (!response.ok) {
-      res.status(500).send("Failed to fetch APK");
-      return;
+        res.status(response.status).end();
+        return;
     }
-
-    res.setHeader("Content-Type", "application/vnd.android.package-archive");
-    res.setHeader("Content-Disposition", "attachment; filename=egate.apk");
-
-    if (response.body && typeof (response.body as any).getReader === "function") {
-      // Web ReadableStream (Node 18+, Vercel/Edge)
-      const reader = (response.body as any).getReader();
-      res.status(200);
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) res.write(Buffer.from(value));
-      }
-      res.end();
-    } else {
-      // Fallback: buffer the whole response
-      const buffer = Buffer.from(await response.arrayBuffer());
-      res.send(buffer);
-    }
-  } catch (e: any) {
-    res.status(500).send("Error proxying APK: " + (e?.message || e));
-  }
+    // Set CORS header for your frontend
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    response.body.pipeTo(res as any); // In real app, use stream pipeline for Node.js
 }
