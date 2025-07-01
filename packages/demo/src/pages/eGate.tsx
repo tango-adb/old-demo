@@ -43,7 +43,7 @@ class InstallPageState {
         bypassLowTargetSdkBlock: false,
     };
 
-    apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
+    apkUrl = "/app-general-release.apk";
 
     constructor() {
         makeAutoObservable(this, {
