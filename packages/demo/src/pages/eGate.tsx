@@ -103,11 +103,10 @@ class InstallPageState {
             const pm = new PackageManager(GLOBAL_STATE.adb!);
             const start = Date.now();
 
-            // --- THIS IS THE KEY PART ---
-            // All transforms must yield Uint8Array, nothing else
+            // FIX: Use WrapConsumableStream.transformer()
             const stream = apkBlob
-                .stream() // ReadableStream<Uint8Array>
-                .pipeThrough(new WrapConsumableStream()) // ReadableStream<Consumable<Uint8Array>>
+                .stream()
+                .pipeThrough(WrapConsumableStream.transformer())
                 .pipeThrough(
                     new ProgressStream<Uint8Array>(
                         action((uploaded) => {
@@ -132,7 +131,6 @@ class InstallPageState {
                     )
                 );
 
-            // Pass the stream as the second argument
             const log = await pm.installStream(
                 apkBlob.size,
                 stream,
