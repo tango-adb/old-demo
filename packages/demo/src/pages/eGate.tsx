@@ -8,7 +8,7 @@ import {
     PackageManager,
     PackageManagerInstallOptions,
 } from "@yume-chan/android-bin";
-import { WrapConsumableStream, WritableStream } from "@yume-chan/stream-extra";
+import { ConsumableStream, WritableStream } from "@yume-chan/stream-extra";
 import { action, makeAutoObservable, observable, runInAction } from "mobx";
 import { observer } from "mobx-react-lite";
 import { NextPage } from "next";
@@ -103,10 +103,10 @@ class InstallPageState {
             const pm = new PackageManager(GLOBAL_STATE.adb!);
             const start = Date.now();
 
-            // The correct usage for your version:
+            // Use ConsumableStream.transformer() here
             const stream = apkBlob
                 .stream()
-                .pipeThrough(new WrapConsumableStream())
+                .pipeThrough(ConsumableStream.transformer())
                 .pipeThrough(
                     new ProgressStream<Uint8Array>(
                         action((uploaded) => {
