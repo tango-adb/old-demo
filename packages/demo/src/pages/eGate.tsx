@@ -29,10 +29,8 @@ enum Stage {
 interface Progress {
     filename: string;
     stage: Stage;
-    // With no-cors, the download progress is indeterminate.
     downloadedBytes: number;
     totalBytes: number;
-    // value is always undefined because progress cannot be determined.
     value: number | undefined;
 }
 
@@ -52,13 +50,13 @@ class InstallPageState {
         });
     }
 
-    // Using fetch with mode "no-cors" creates an opaque response.
-    // This means we cannot track download progress, so we simply show
-    // an indeterminate indicator until the download finishes.
-    downloadApkNoCors = async (apkUrl: string): Promise<File> => {
-        const response = await fetch(apkUrl, { method: "GET", mode: "no-cors" });
-        // Since the response is opaque, we cannot determine status or progress.
-        // We simply convert the response to a blob.
+    // Using a normal fetch (without "no-cors") will return a full response.
+    // Make sure the server allows CORS for this APK URL.
+    downloadApk = async (apkUrl: string): Promise<File> => {
+        const response = await fetch(apkUrl, { method: "GET" });
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
         const blob = await response.blob();
         return new File([blob], "app-general-release.apk", { type: blob.type });
     };
@@ -79,7 +77,7 @@ class InstallPageState {
 
         let file: File;
         try {
-            file = await this.downloadApkNoCors(apkUrl);
+            file = await this.downloadApk(apkUrl);
         } catch (err: any) {
             runInAction(() => {
                 this.log = "Download error: " + err.message;
@@ -195,8 +193,6 @@ const Install: NextPage = () => {
                     <ProgressIndicator
                         styles={{ root: { width: 300 } }}
                         label={state.progress.filename}
-                        // With an opaque response, we cannot compute a percentage.
-                        // Using undefined shows an indeterminate indicator.
                         percentComplete={state.progress.value}
                         description={Stage[state.progress.stage]}
                     />
