@@ -131,6 +131,10 @@ class InstallPageState {
         );
 
         const elapsed = Date.now() - start;
+        // Log file size and elapsed time for debugging purposes.
+        console.log("File size (bytes):", file.size);
+        console.log("Elapsed time (ms):", elapsed);
+
         await logStream.pipeTo(
             new WritableStream({
                 write: action((chunk) => {
