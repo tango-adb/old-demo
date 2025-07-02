@@ -96,35 +96,36 @@ class InstallPageState {
                 Uint8Array<ArrayBufferLike>
             >;
 
+            // Wrap ProgressStream instance with a cast to the expected ReadableWritablePair type
+            const progressStream = new ProgressStream(
+                action((downloaded: number) => {
+                    if (downloaded < fileInfo.size) {
+                        this.progress = {
+                            filename: fileInfo.name,
+                            stage: Stage.Downloading,
+                            downloadedSize: downloaded,
+                            totalSize: fileInfo.size,
+                            value: fileInfo.size > 0 ? (downloaded / fileInfo.size) * 0.8 : undefined,
+                        };
+                    } else {
+                        this.progress = {
+                            filename: fileInfo.name,
+                            stage: Stage.Installing,
+                            downloadedSize: downloaded,
+                            totalSize: fileInfo.size,
+                            value: 0.8,
+                        };
+                    }
+                })
+            ) as unknown as ReadableWritablePair<
+                ArrayBufferView<ArrayBufferLike> | undefined,
+                ArrayBufferView<ArrayBufferLike> | undefined
+            >;
+
             // Use the response body as the file stream with proper stream typing
             const installStream = response.body
                 .pipeThrough(consumableStream)
-                .pipeThrough(
-                    new ProgressStream(
-                        action((downloaded: number) => {
-                            if (downloaded < fileInfo.size) {
-                                this.progress = {
-                                    filename: fileInfo.name,
-                                    stage: Stage.Downloading,
-                                    downloadedSize: downloaded,
-                                    totalSize: fileInfo.size,
-                                    value:
-                                        fileInfo.size > 0
-                                            ? (downloaded / fileInfo.size) * 0.8
-                                            : undefined,
-                                };
-                            } else {
-                                this.progress = {
-                                    filename: fileInfo.name,
-                                    stage: Stage.Installing,
-                                    downloadedSize: downloaded,
-                                    totalSize: fileInfo.size,
-                                    value: 0.8,
-                                };
-                            }
-                        })
-                    )
-                );
+                .pipeThrough(progressStream);
 
             // Install the APK using the stream from the download
             const logStream = await pm.installStream(fileInfo.size, installStream, this.options);
