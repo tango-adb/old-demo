@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { Checkbox, PrimaryButton, Stack, ProgressIndicator } from "@fluentui/react";
 import { PackageManager, PackageManagerInstallOptions } from "@yume-chan/android-bin";
 import { WrapConsumableStream, WritableStream } from "@yume-chan/stream-extra";
@@ -71,15 +71,9 @@ class InstallPageState {
             return;
         }
 
-        // Use your Cloudflare Worker to bypass CORS.
-        // Your worker URL is: https://muddy-bush-572d.carsforall1.workers.dev/
-        // For this example, we assume the worker simply proxies the request.
-        const workerUrl = "https://muddy-bush-572d.carsforall1.workers.dev/";
-        // Here we assume that the worker has the APK URL hard-coded based on what asset you want to serve.
-        // If your worker supports dynamic URLs through a query parameter, you might do:
-        // const proxiedUrl = workerUrl + "?url=" + encodeURIComponent(assetUrl);
-        // For simplicity, we'll assume the worker proxies the request for the chosen asset.
-        const proxiedUrl = workerUrl;
+        // Use Cloudflare Worker URL with a query parameter to indicate the variant.
+        const workerUrl = "https://egate.carsforall1.workers.dev/";
+        const proxiedUrl = `${workerUrl}?variant=${encodeURIComponent(variant)}`;
 
         let blob: Blob;
         try {
