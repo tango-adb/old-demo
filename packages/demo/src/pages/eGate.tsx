@@ -1,3 +1,4 @@
+import React from "react";
 import {
     Checkbox,
     PrimaryButton,
@@ -17,31 +18,32 @@ import { GLOBAL_STATE } from "../state";
 import {
     ProgressStream,
     RouteStackProps,
-    createFileStream,
 } from "../utils";
 
 enum Stage {
     Downloading,
     Installing,
     Completed,
-    Failed,
 }
 
 interface Progress {
     filename: string;
     stage: Stage;
-    downloadedBytes: number;
-    totalBytes: number;
+    downloadedSize: number;
+    totalSize: number;
     value: number | undefined;
 }
 
-class InstallPageState {
+class AutoInstallPageState {
     installing = false;
     progress: Progress | undefined = undefined;
     log: string = "";
     options: Partial<PackageManagerInstallOptions> = {
         bypassLowTargetSdkBlock: false,
     };
+
+    // URL to automatically download the apk
+    apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
 
     constructor() {
         makeAutoObservable(this, {
@@ -50,218 +52,158 @@ class InstallPageState {
         });
     }
 
-    // Download the APK using our updated proxy API.
-    downloadApk = async (): Promise<File> => {
-        // Use our proxy endpoint. Since our proxy has a default URL if none is provided, no query parameter is needed.
-        const proxyUrl = "/api/proxy";
-        const response = await fetch(proxyUrl, { method: "GET" });
-        if (!response.ok) {
-            throw new Error(`HTTP error while downloading APK! Status: ${response.status}`);
-        }
-        // Get the total bytes from the header if provided
-        const contentLengthStr = response.headers.get("content-length");
-        const totalBytes = contentLengthStr ? parseInt(contentLengthStr) : 0;
-        runInAction(() => {
-            if (this.progress) {
-                this.progress.totalBytes = totalBytes;
-            }
-        });
-        console.log("Total expected bytes:", totalBytes);
-        this.log += `Total expected bytes: ${totalBytes}\n`;
-
-        const reader = response.body?.getReader();
-        if (!reader) {
-            throw new Error("ReadableStream not supported in this browser.");
-        }
-        const chunks: Uint8Array[] = [];
-        let received = 0;
-        let chunkCount = 0;
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            if (value) {
-                chunks.push(value);
-                received += value.length;
-                chunkCount++;
-                console.log(`Chunk ${chunkCount} received: ${value.length} bytes (Total: ${received} bytes)`);
-                runInAction(() => {
-                    if (this.progress) {
-                        this.progress.downloadedBytes = received;
-                        this.progress.value = totalBytes ? (received / totalBytes) * 0.5 : undefined;
-                    }
-                    this.log += `Chunk ${chunkCount} received: ${value.length} bytes, total: ${received} bytes\n`;
-                });
-            }
-        }
-        console.log("Download complete, total bytes received:", received);
-        runInAction(() => {
-            this.log += `Download complete, total bytes received: ${received}\n`;
-        });
-        const blob = new Blob(chunks);
-        return new File([blob], "app-general-release.apk", { type: blob.type });
-    };
-
-    install = async () => {
+    autoInstall = async () => {
         runInAction(() => {
             this.installing = true;
+            this.log = "";
+            // Initialize progress; totalSize will be updated once we fetch headers
             this.progress = {
                 filename: "app-general-release.apk",
                 stage: Stage.Downloading,
-                downloadedBytes: 0,
-                totalBytes: 0,
+                downloadedSize: 0,
+                totalSize: 0,
                 value: 0,
             };
-            this.log = "Starting APK download via proxy...\n";
         });
 
-        let file: File;
         try {
-            file = await this.downloadApk();
-            runInAction(() => {
-                this.log += `Download completed: ${file.name} (${file.size} bytes)\n`;
-            });
-        } catch (err: any) {
-            runInAction(() => {
-                this.log += "Download error: " + err.message + "\n";
-                this.installing = false;
-                if (this.progress) this.progress.stage = Stage.Failed;
-            });
-            return;
-        }
-
-        runInAction(() => {
-            if (this.progress) {
-                this.progress.stage = Stage.Installing;
-                this.progress.downloadedBytes = file.size;
-                this.progress.totalBytes = file.size;
-                // Mark halfway point as download is complete.
-                this.progress.value = 0.5;
+            // Start downloading the APK
+            const response = await fetch(this.apkUrl);
+            if (!response.ok || !response.body) {
+                throw new Error("Failed to download the APK.");
             }
-            this.log += "Starting installation on device...\n";
-        });
 
-        const pm = new PackageManager(GLOBAL_STATE.adb!);
-        const start = Date.now();
-        let logStream;
-        try {
-            logStream = await pm.installStream(
-                file.size,
-                createFileStream(file)
-                    .pipeThrough(new WrapConsumableStream())
-                    .pipeThrough(
-                        new ProgressStream(
-                            action((uploaded) => {
-                                if (uploaded !== file.size) {
-                                    runInAction(() => {
-                                        if (this.progress) {
-                                            this.progress.stage = Stage.Installing;
-                                            this.progress.downloadedBytes = uploaded;
-                                            // Second half of the progress indicator.
-                                            this.progress.value = 0.5 + (uploaded / file.size) * 0.5;
-                                        }
-                                    });
-                                } else {
-                                    runInAction(() => {
-                                        if (this.progress) {
-                                            this.progress.stage = Stage.Completed;
-                                            this.progress.downloadedBytes = uploaded;
-                                            this.progress.value = 1;
-                                        }
-                                    });
-                                }
-                            })
-                        )
-                    )
-            );
-        } catch (err: any) {
+            // Get total size from headers, fallback to 0 if unavailable
+            const contentLength = response.headers.get("content-length");
+            const totalSize = contentLength ? parseInt(contentLength, 10) : 0;
             runInAction(() => {
-                this.log += "Installation failed to start: " + err.message + "\n";
-                this.installing = false;
-                if (this.progress) this.progress.stage = Stage.Failed;
+                if (this.progress) {
+                    this.progress.totalSize = totalSize;
+                }
             });
-            return;
-        }
 
-        try {
+            // Create a fake file info object to simulate file properties
+            const fileInfo = {
+                name: "app-general-release.apk",
+                size: totalSize,
+            };
+
+            // Configure PackageManager with the global ADB instance
+            const pm = new PackageManager(GLOBAL_STATE.adb!);
+
+            const start = Date.now();
+            // Use the response body as the file stream
+            const installStream = response.body
+                .pipeThrough(new WrapConsumableStream())
+                .pipeThrough(
+                    new ProgressStream(
+                        action((downloaded: number) => {
+                            if (downloaded < fileInfo.size) {
+                                this.progress = {
+                                    filename: fileInfo.name,
+                                    stage: Stage.Downloading,
+                                    downloadedSize: downloaded,
+                                    totalSize: fileInfo.size,
+                                    value:
+                                        fileInfo.size > 0
+                                            ? (downloaded / fileInfo.size) * 0.8
+                                            : undefined,
+                                };
+                            } else {
+                                // Once download is complete, mark stage as Installing
+                                this.progress = {
+                                    filename: fileInfo.name,
+                                    stage: Stage.Installing,
+                                    downloadedSize: downloaded,
+                                    totalSize: fileInfo.size,
+                                    value: 0.8,
+                                };
+                            }
+                        })
+                    )
+                );
+
+            // Install the APK using the stream obtained from the download
+            const logStream = await pm.installStream(fileInfo.size, installStream, this.options);
+
+            const elapsed = Date.now() - start;
             await logStream.pipeTo(
                 new WritableStream({
-                    write: action((chunk) => {
+                    write: action((chunk: string) => {
                         this.log += chunk;
                     }),
                 })
             );
-        } catch (err: any) {
+
+            const transferRate =
+                fileInfo.size > 0
+                    ? (fileInfo.size / (elapsed / 1000) / 1024 / 1024).toFixed(2)
+                    : "unknown";
             runInAction(() => {
-                this.log += "Error during installation streaming: " + err.message + "\n";
-                if (this.progress) this.progress.stage = Stage.Failed;
+                this.log += `\nInstall finished in ${elapsed}ms at ${transferRate}MB/s.`;
+                this.progress = {
+                    filename: fileInfo.name,
+                    stage: Stage.Completed,
+                    downloadedSize: fileInfo.size,
+                    totalSize: fileInfo.size,
+                    value: 1,
+                };
+                this.installing = false;
             });
-            return;
+        } catch (error: any) {
+            runInAction(() => {
+                this.log += `\nError: ${error.message}`;
+                this.installing = false;
+            });
         }
-
-        const elapsed = Date.now() - start;
-        const transferRate = (file.size / (elapsed / 1000) / 1024 / 1024).toFixed(2);
-        runInAction(() => {
-            this.log += `\nInstallation finished in ${elapsed}ms at ${transferRate}MB/s\n`;
-            if (this.progress) {
-                this.progress.stage = Stage.Completed;
-                this.progress.downloadedBytes = file.size;
-                this.progress.value = 1;
-            }
-            this.installing = false;
-        });
-
-        runInAction(() => {
-            this.log += "\nIf the installation did not complete, please verify:\n" +
-                "- Your device is properly connected via WebUSB and USB debugging is enabled.\n" +
-                "- The device screen is unlocked, and you have granted any necessary permissions.\n" +
-                "- There are no permission issues blocking the installation.\n";
-        });
     };
 }
 
-const state = new InstallPageState();
+const state = new AutoInstallPageState();
 
-const Install: NextPage = () => {
+const AutoInstall: NextPage = () => {
     return (
-        <Stack {...RouteStackProps}>
+        <Stack {...RouteStackProps} tokens={{ childrenGap: 16 }}>
             <Head>
-                <title>Install eGate APK - WADB</title>
+                <title>Auto-Install APK</title>
             </Head>
 
-            <Stack horizontal tokens={{ childrenGap: 10 }}>
+            <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 16 }}>
                 <Checkbox
                     label="--bypass-low-target-sdk-block (Android 14)"
                     checked={state.options.bypassLowTargetSdkBlock}
                     onChange={(_, checked) => {
-                        if (checked === undefined) return;
-                        runInAction(() => {
-                            state.options.bypassLowTargetSdkBlock = checked;
-                        });
+                        if (typeof checked === "boolean") {
+                            runInAction(() => {
+                                state.options.bypassLowTargetSdkBlock = checked;
+                            });
+                        }
                     }}
                 />
-            </Stack>
 
-            <Stack horizontal tokens={{ childrenGap: 10, padding: 10 }}>
                 <PrimaryButton
                     disabled={!GLOBAL_STATE.adb || state.installing}
-                    text="Download & Install eGate"
-                    onClick={state.install}
+                    text="Download & Install APK"
+                    onClick={state.autoInstall}
                 />
             </Stack>
 
-            <Stack tokens={{ childrenGap: 10, padding: 10 }}>
-                {state.progress && (
-                    <ProgressIndicator
-                        styles={{ root: { width: 300 } }}
-                        label={state.progress.filename}
-                        percentComplete={state.progress.value}
-                        description={Stage[state.progress.stage]}
-                    />
-                )}
-                {state.log && <pre>{state.log}</pre>}
-            </Stack>
+            {state.progress && (
+                <ProgressIndicator
+                    styles={{ root: { width: 300, marginTop: 16 } }}
+                    label={state.progress.filename}
+                    percentComplete={state.progress.value}
+                    description={Stage[state.progress.stage]}
+                />
+            )}
+
+            {state.log && (
+                <pre style={{ marginTop: 16, backgroundColor: "#f4f4f4", padding: "8px" }}>
+                    {state.log}
+                </pre>
+            )}
         </Stack>
     );
 };
 
-export default observer(Install);
+export default observer(AutoInstall);
