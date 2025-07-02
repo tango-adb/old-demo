@@ -1,183 +1,205 @@
-import React, { useState, useEffect } from "react";
-import { PackageManager, PackageManagerInstallOptions } from "@yume-chan/android-bin";
-import { Consumable, WrapConsumableStream, WritableStream } from "@yume-chan/stream-extra";
-import { action, runInAction } from "mobx";
+import React, { useEffect } from "react";
+import {
+    Checkbox,
+    PrimaryButton,
+    ProgressIndicator,
+    Stack,
+} from "@fluentui/react";
+import {
+    PackageManager,
+    PackageManagerInstallOptions,
+} from "@yume-chan/android-bin";
+import { WrapConsumableStream, WritableStream } from "@yume-chan/stream-extra";
+import { action, makeAutoObservable, observable, runInAction } from "mobx";
 import { observer } from "mobx-react-lite";
-
-declare global {
-    interface Window {
-        GLOBAL_ADB: any;
-    }
-}
+import { NextPage } from "next";
+import Head from "next/head";
+import { GLOBAL_STATE } from "../state";
+import {
+    ProgressStream,
+    RouteStackProps,
+    createFileStream,
+} from "../utils";
 
 enum Stage {
-    Downloading,
     Uploading,
     Installing,
     Completed,
-    Error,
 }
 
 interface Progress {
+    filename: string;
     stage: Stage;
     uploadedSize: number;
     totalSize: number;
-    percent: number | undefined;
+    value: number | undefined;
 }
 
-const EGateInstaller: React.FC = () => {
-    const [progress, setProgress] = useState<Progress | null>(null);
-    const [log, setLog] = useState<string>("");
-
-    // Define the eGate MDM APK download URL
-    const apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
-
-    // Options for installation, adjust as needed
-    const installOptions: Partial<PackageManagerInstallOptions> = {
+class InstallPageState {
+    installing = false;
+    progress: Progress | undefined = undefined;
+    log: string = "";
+    options: Partial<PackageManagerInstallOptions> = {
         bypassLowTargetSdkBlock: false,
     };
 
-    const installAPK = async () => {
-        runInAction(() => {
-            setProgress({
-                stage: Stage.Downloading,
-                uploadedSize: 0,
-                totalSize: 0,
-                percent: 0,
-            });
-            setLog("Starting APK download...\n");
+    constructor() {
+        makeAutoObservable(this, {
+            progress: observable.ref,
+            options: observable.deep,
         });
+    }
 
-        let apkBlob: Blob;
+    install = async () => {
+        // URL to auto-download APK
+        const apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
+
+        // Download the APK from the URL
+        let blob: Blob;
         try {
             const response = await fetch(apkUrl);
             if (!response.ok) {
-                throw new Error(`Failed to fetch APK: ${response.statusText}`);
+                throw new Error(`Failed to download APK: ${response.statusText}`);
             }
-            apkBlob = await response.blob();
+            blob = await response.blob();
         } catch (error: any) {
             runInAction(() => {
-                setLog((prev) => prev + `Download error: ${error.message}\n`);
-                setProgress({
-                    stage: Stage.Error,
-                    uploadedSize: 0,
-                    totalSize: 0,
-                    percent: undefined,
-                });
+                this.log += `Download error: ${error.message}\n`;
             });
             return;
         }
 
-        runInAction(() => {
-            setProgress({
-                stage: Stage.Uploading,
-                uploadedSize: 0,
-                totalSize: apkBlob.size,
-                percent: 0,
-            });
-            setLog((prev) => prev + "APK downloaded. Starting upload...\n");
+        // Convert the downloaded blob to a File-like object.
+        // This is needed because our installation utilities expect a File.
+        const file = new File([blob], "app-general-release.apk", {
+            type: blob.type,
+            lastModified: Date.now(),
         });
 
-        try {
-            const adb = window.GLOBAL_ADB; // Ensure you have an ADB connection
-            const pm = new PackageManager(adb);
-            const startTime = Date.now();
+        // Initialize the install state.
+        runInAction(() => {
+            this.installing = true;
+            this.progress = {
+                filename: file.name,
+                stage: Stage.Uploading,
+                uploadedSize: 0,
+                totalSize: file.size,
+                value: 0,
+            };
+            this.log = "";
+        });
 
-            // Pipe the blob's stream into a WrapConsumableStream to convert it into a stream of Consumable<Uint8Array>
-            const blobStream = apkBlob.stream() as ReadableStream<Uint8Array>;
-            const wrapStream = new WrapConsumableStream();
-            await blobStream.pipeTo(wrapStream.writable);
+        const pm = new PackageManager(GLOBAL_STATE.adb!);
+        const start = Date.now();
 
-            // Now intercept the stream to track progress. The input is Consumable<Uint8Array>,
-            // and we output the same type without modification.
-            const progressStream = wrapStream.readable.pipeThrough(
-                new TransformStream<Consumable<Uint8Array>, Consumable<Uint8Array>>({
-                    transform(chunk, controller) {
-                        runInAction(() => {
-                            setProgress((prev) => {
-                                if (prev) {
-                                    // Since each chunk is already a consumable wrapping a Uint8Array, we can access its raw value via chunk.value.
-                                    // Note: This assumes that the Consumable type has a "value" property.
-                                    const chunkValue = chunk.value;
-                                    const newUploaded = prev.uploadedSize + chunkValue.length;
-                                    const percent = newUploaded / apkBlob.size;
-                                    return {
-                                        ...prev,
-                                        uploadedSize: newUploaded,
-                                        percent: percent < 0.8 ? percent * 0.8 : 0.8, // reserve 80% for upload progress
-                                        stage: newUploaded < apkBlob.size ? Stage.Uploading : Stage.Installing,
-                                        totalSize: apkBlob.size,
-                                    };
-                                }
-                                return prev;
-                            });
-                        });
-                        controller.enqueue(chunk);
-                    },
-                    flush(controller) {
-                        controller.terminate();
-                    }
-                })
-            );
+        // Create a stream from the file and track progress.
+        const installLog = await pm.installStream(
+            file.size,
+            createFileStream(file)
+                .pipeThrough(new WrapConsumableStream())
+                .pipeThrough(
+                    new ProgressStream(
+                        action((uploaded) => {
+                            if (uploaded !== file.size) {
+                                this.progress = {
+                                    filename: file.name,
+                                    stage: Stage.Uploading,
+                                    uploadedSize: uploaded,
+                                    totalSize: file.size,
+                                    value: (uploaded / file.size) * 0.8, // uploading accounts for 80%
+                                };
+                            } else {
+                                this.progress = {
+                                    filename: file.name,
+                                    stage: Stage.Installing,
+                                    uploadedSize: uploaded,
+                                    totalSize: file.size,
+                                    value: 0.8, // move to installation stage now
+                                };
+                            }
+                        })
+                    )
+                )
+        );
 
-            const installLog = await pm.installStream(apkBlob.size, progressStream, installOptions);
+        // Wait for installation log stream to finish and update log.
+        const elapsed = Date.now() - start;
+        await installLog.pipeTo(
+            new WritableStream({
+                write: action((chunk: string) => {
+                    this.log += chunk;
+                }),
+            })
+        );
 
-            await installLog.pipeTo(
-                new WritableStream({
-                    write: action((chunk: string) => {
-                        setLog((prev) => prev + chunk);
-                    }),
-                })
-            );
+        const transferRate = (
+            file.size /
+            (elapsed / 1000) /
+            1024 /
+            1024
+        ).toFixed(2);
+        this.log += `Install finished in ${elapsed}ms at ${transferRate}MB/s`;
 
-            const elapsedTime = Date.now() - startTime;
-            runInAction(() => {
-                setLog((prev) => prev + `Installation completed in ${elapsedTime} ms.\n`);
-                setProgress({
-                    stage: Stage.Completed,
-                    uploadedSize: apkBlob.size,
-                    totalSize: apkBlob.size,
-                    percent: 1,
-                });
-            });
-        } catch (error: any) {
-            runInAction(() => {
-                setLog((prev) => prev + `Installation error: ${error.message}\n`);
-                setProgress({
-                    stage: Stage.Error,
-                    uploadedSize: 0,
-                    totalSize: apkBlob.size,
-                    percent: undefined,
-                });
-            });
-        }
+        runInAction(() => {
+            this.progress = {
+                filename: file.name,
+                stage: Stage.Completed,
+                uploadedSize: file.size,
+                totalSize: file.size,
+                value: 1,
+            };
+            this.installing = false;
+        });
     };
+}
 
+const state = new InstallPageState();
+
+const Install: NextPage = () => {
+    // Automatically trigger installation on component mount.
     useEffect(() => {
-        installAPK();
+        state.install();
     }, []);
 
     return (
-        <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
-            <h1>eGate MDM Auto Installer</h1>
-            {progress ? (
-                <div>
-                    <p>
-                        Stage: {Stage[progress.stage]}<br />
-                        {progress.totalSize > 0 && (
-                            <>
-                                {progress.uploadedSize} / {progress.totalSize} bytes (
-                                {progress.percent ? (progress.percent * 100).toFixed(0) : 0}%)
-                            </>
-                        )}
-                    </p>
-                </div>
-            ) : (
-                <p>No progress information available.</p>
+        <Stack {...RouteStackProps}>
+            <Head>
+                <title>Install APK - eGate</title>
+            </Head>
+
+            <Stack horizontal>
+                <Checkbox
+                    label="--bypass-low-target-sdk-block (Android 14)"
+                    checked={state.options.bypassLowTargetSdkBlock}
+                    onChange={(_, checked) => {
+                        if (checked === undefined) return;
+                        runInAction(() => {
+                            state.options.bypassLowTargetSdkBlock = checked;
+                        });
+                    }}
+                />
+            </Stack>
+
+            <Stack horizontal>
+                <PrimaryButton
+                    disabled={!GLOBAL_STATE.adb || state.installing}
+                    text="Install APK"
+                    onClick={state.install}
+                />
+            </Stack>
+
+            {state.progress && (
+                <ProgressIndicator
+                    styles={{ root: { width: 300 } }}
+                    label={state.progress.filename}
+                    percentComplete={state.progress.value}
+                    description={Stage[state.progress.stage]}
+                />
             )}
-            <pre style={{ background: "#f0f0f0", padding: "10px", borderRadius: "4px" }}>{log}</pre>
-        </div>
+
+            {state.log && <pre>{state.log}</pre>}
+        </Stack>
     );
 };
 
-export default observer(EGateInstaller);
+export default observer(Install);
