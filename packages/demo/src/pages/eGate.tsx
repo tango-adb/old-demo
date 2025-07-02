@@ -60,12 +60,15 @@ class InstallPageState {
             });
             return;
         }
+        
+        // Use a public CORS proxy to fetch the APK as a workaround.
+        // Note: This proxy is not recommended for production use.
+        const corsProxy = "https://thingproxy.freeboard.io/fetch/";
+        const proxiedUrl = corsProxy + assetUrl;
 
-        // Now attempt to fetch the APK using the URL from the release asset.
         let blob: Blob;
         try {
-            // Note: Even though we obtained the URL from the API, the actual asset download still requires proper CORS headers.
-            const response = await fetch(assetUrl, { mode: "cors" });
+            const response = await fetch(proxiedUrl, { mode: "cors" });
             if (!response.ok) {
                 throw new Error(`Failed to download APK: ${response.statusText}`);
             }
@@ -108,7 +111,7 @@ class InstallPageState {
         const pm = new PackageManager(GLOBAL_STATE.adb);
         const start = Date.now();
 
-        // Start the installation process using the file stream while tracking progress.
+        // Start the installation process using our file stream while tracking progress.
         const installLog = await pm.installStream(
             file.size,
             createFileStream(file)
@@ -130,7 +133,7 @@ class InstallPageState {
                                     stage: Stage.Installing,
                                     uploadedSize: uploaded,
                                     totalSize: file.size,
-                                    value: 0.8, // installation phase
+                                    value: 0.8, // installation phase starts
                                 };
                             }
                         })
