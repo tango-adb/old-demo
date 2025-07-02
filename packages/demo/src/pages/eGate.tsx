@@ -51,15 +51,16 @@ class InstallPageState {
         });
     }
 
-    // Download the APK using our Next.js API proxy with manual stream reading for progress update.
+    // Download the APK using our Next.js API proxy with manual stream reading for better progress logging.
     downloadApk = async (apkUrl: string): Promise<File> => {
+        // Append a random query parameter to bypass potential caching.
+        const cacheBuster = `cb=${Date.now()}`;
         const proxyBase = "https://jmtdi.github.io/WADB/api/proxy.js?url=";
-        const targetUrl = proxyBase + encodeURIComponent(apkUrl);
+        const targetUrl = `${proxyBase}${encodeURIComponent(apkUrl)}&${cacheBuster}`;
         const response = await fetch(targetUrl, { method: "GET" });
         if (!response.ok) {
             throw new Error(`HTTP error while downloading APK! Status: ${response.status}`);
         }
-        // Get total bytes from header (if provided)
         const contentLengthStr = response.headers.get("content-length");
         const totalBytes = contentLengthStr ? parseInt(contentLengthStr) : 0;
         runInAction(() => {
@@ -67,10 +68,11 @@ class InstallPageState {
                 this.progress.totalBytes = totalBytes;
             }
         });
-        // Read the stream manually to update progress.
+        console.log("Total expected bytes:", totalBytes);
+
         const reader = response.body?.getReader();
         if (!reader) {
-            throw new Error("ReadableStream not supported in this browser.");
+            throw new Error("ReadableStream is not supported in this browser.");
         }
         const chunks: Uint8Array[] = [];
         let received = 0;
@@ -80,12 +82,13 @@ class InstallPageState {
             if (value) {
                 chunks.push(value);
                 received += value.length;
+                console.log("Chunk received:", value.length, "Total received so far:", received);
                 runInAction(() => {
                     if (this.progress) {
                         this.progress.downloadedBytes = received;
-                        // Calculate progress only during download phase (first half of indicator)
                         this.progress.value = totalBytes ? (received / totalBytes) * 0.5 : undefined;
                     }
+                    this.log += `Received chunk of ${value.length} bytes, total: ${received} bytes\n`;
                 });
             }
         }
@@ -94,7 +97,6 @@ class InstallPageState {
     };
 
     install = async () => {
-        // Original APK URL from GitHub.
         const apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
         runInAction(() => {
             this.installing = true;
@@ -118,8 +120,7 @@ class InstallPageState {
             runInAction(() => {
                 this.log += "Download error: " + err.message + "\n";
                 this.installing = false;
-                if (this.progress)
-                    this.progress.stage = Stage.Failed;
+                if (this.progress) this.progress.stage = Stage.Failed;
             });
             return;
         }
@@ -137,7 +138,6 @@ class InstallPageState {
         const pm = new PackageManager(GLOBAL_STATE.adb!);
         const start = Date.now();
         let logStream;
-
         try {
             logStream = await pm.installStream(
                 file.size,
@@ -151,7 +151,7 @@ class InstallPageState {
                                         if (this.progress) {
                                             this.progress.stage = Stage.Installing;
                                             this.progress.downloadedBytes = uploaded;
-                                            // The second half of the progress indicator.
+                                            // Second half of the progress indicator.
                                             this.progress.value = 0.5 + (uploaded / file.size) * 0.5;
                                         }
                                     });
@@ -205,7 +205,6 @@ class InstallPageState {
             this.installing = false;
         });
 
-        // Additional advice for troubleshooting.
         runInAction(() => {
             this.log += "\nIf the installation did not complete, please verify:\n" +
                 "- Your device is properly connected via WebUSB and USB debugging is enabled.\n" +
@@ -254,7 +253,6 @@ const Install: NextPage = () => {
                         description={Stage[state.progress.stage]}
                     />
                 )}
-
                 {state.log && <pre>{state.log}</pre>}
             </Stack>
         </Stack>
