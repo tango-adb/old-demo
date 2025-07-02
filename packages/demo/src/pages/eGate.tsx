@@ -1,4 +1,3 @@
-import React from "react";
 import {
     Checkbox,
     PrimaryButton,
@@ -34,7 +33,7 @@ interface Progress {
     value: number | undefined;
 }
 
-class AutoInstallPageState {
+class InstallPageState {
     installing = false;
     progress: Progress | undefined = undefined;
     log: string = "";
@@ -42,7 +41,7 @@ class AutoInstallPageState {
         bypassLowTargetSdkBlock: false,
     };
 
-    // URL to automatically download the apk
+    // URL to automatically download the APK
     apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
 
     constructor() {
@@ -56,7 +55,7 @@ class AutoInstallPageState {
         runInAction(() => {
             this.installing = true;
             this.log = "";
-            // Initialize progress; totalSize will be updated once we fetch headers
+            // Initial progress with unknown total size (will update later)
             this.progress = {
                 filename: "app-general-release.apk",
                 stage: Stage.Downloading,
@@ -82,63 +81,59 @@ class AutoInstallPageState {
                 }
             });
 
-            // Create a fake file info object to simulate file properties
+            // File information object
             const fileInfo = {
                 name: "app-general-release.apk",
                 size: totalSize,
             };
 
-            // Configure PackageManager with the global ADB instance
             const pm = new PackageManager(GLOBAL_STATE.adb!);
-
             const start = Date.now();
-            // Use the response body as the file stream
+
+            // Cast WrapConsumableStream to expected type to resolve type mismatch
+            const consumableStream = new WrapConsumableStream() as unknown as ReadableWritablePair<
+                ArrayBufferView<ArrayBufferLike> | undefined,
+                Uint8Array<ArrayBufferLike>
+            >;
+
+            // Use the response body as the file stream with proper stream typing
             const installStream = response.body
-                .pipeThrough(new WrapConsumableStream())
-                .pipeThrough(
-                    new ProgressStream(
-                        action((downloaded: number) => {
-                            if (downloaded < fileInfo.size) {
-                                this.progress = {
-                                    filename: fileInfo.name,
-                                    stage: Stage.Downloading,
-                                    downloadedSize: downloaded,
-                                    totalSize: fileInfo.size,
-                                    value:
-                                        fileInfo.size > 0
-                                            ? (downloaded / fileInfo.size) * 0.8
-                                            : undefined,
-                                };
-                            } else {
-                                // Once download is complete, mark stage as Installing
-                                this.progress = {
-                                    filename: fileInfo.name,
-                                    stage: Stage.Installing,
-                                    downloadedSize: downloaded,
-                                    totalSize: fileInfo.size,
-                                    value: 0.8,
-                                };
-                            }
-                        })
-                    )
+                .pipeThrough(consumableStream)
+                .pipeThrough(new ProgressStream(
+                    action((downloaded: number) => {
+                        if (downloaded < fileInfo.size) {
+                            this.progress = {
+                                filename: fileInfo.name,
+                                stage: Stage.Downloading,
+                                downloadedSize: downloaded,
+                                totalSize: fileInfo.size,
+                                value: fileInfo.size > 0 ? (downloaded / fileInfo.size) * 0.8 : undefined,
+                            };
+                        } else {
+                            this.progress = {
+                                filename: fileInfo.name,
+                                stage: Stage.Installing,
+                                downloadedSize: downloaded,
+                                totalSize: fileInfo.size,
+                                value: 0.8,
+                            };
+                        }
+                    })
                 );
 
-            // Install the APK using the stream obtained from the download
+            // Install the APK using the stream from the download
             const logStream = await pm.installStream(fileInfo.size, installStream, this.options);
 
             const elapsed = Date.now() - start;
-            await logStream.pipeTo(
-                new WritableStream({
-                    write: action((chunk: string) => {
-                        this.log += chunk;
-                    }),
-                })
-            );
+            await logStream.pipeTo(new WritableStream({
+                write: action((chunk: string) => {
+                    this.log += chunk;
+                }),
+            }));
 
-            const transferRate =
-                fileInfo.size > 0
-                    ? (fileInfo.size / (elapsed / 1000) / 1024 / 1024).toFixed(2)
-                    : "unknown";
+            const transferRate = fileInfo.size > 0
+                ? (fileInfo.size / (elapsed / 1000) / 1024 / 1024).toFixed(2)
+                : "unknown";
             runInAction(() => {
                 this.log += `\nInstall finished in ${elapsed}ms at ${transferRate}MB/s.`;
                 this.progress = {
@@ -159,13 +154,13 @@ class AutoInstallPageState {
     };
 }
 
-const state = new AutoInstallPageState();
+const state = new InstallPageState();
 
-const AutoInstall: NextPage = () => {
+const Install: NextPage = () => {
     return (
         <Stack {...RouteStackProps} tokens={{ childrenGap: 16 }}>
             <Head>
-                <title>Auto-Install APK</title>
+                <title>Install APK - eGate</title>
             </Head>
 
             <Stack horizontal verticalAlign="center" tokens={{ childrenGap: 16 }}>
@@ -206,4 +201,4 @@ const AutoInstall: NextPage = () => {
     );
 };
 
-export default observer(AutoInstall);
+export default observer(Install);
