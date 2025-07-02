@@ -29,9 +29,10 @@ enum Stage {
 interface Progress {
     filename: string;
     stage: Stage;
+    // With no-cors, the download progress is indeterminate.
     downloadedBytes: number;
     totalBytes: number;
-    // Use a value between 0 and 1
+    // value is always undefined because progress cannot be determined.
     value: number | undefined;
 }
 
@@ -51,59 +52,15 @@ class InstallPageState {
         });
     }
 
-    downloadApk = (apkUrl: string): Promise<File> => {
-        return new Promise((resolve, reject) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open("GET", apkUrl, true);
-            xhr.responseType = "arraybuffer";
-
-            xhr.onprogress = (event) => {
-                runInAction(() => {
-                    const total = event.lengthComputable ? event.total : 0;
-                    const loaded = event.loaded;
-                    let progressValue: number | undefined;
-                    if (event.lengthComputable) {
-                        progressValue = Math.min((loaded / total) * 0.5, 0.5);
-                    } else {
-                        progressValue = undefined;
-                    }
-                    this.progress = {
-                        filename: "app-general-release.apk",
-                        stage: Stage.Downloading,
-                        downloadedBytes: loaded,
-                        totalBytes: total,
-                        value: progressValue,
-                    };
-                });
-            };
-
-            xhr.onload = () => {
-                if (xhr.status === 200) {
-                    const arrayBuffer = xhr.response;
-                    const blob = new Blob([arrayBuffer]);
-                    const file = new File([blob], "app-general-release.apk", { type: blob.type });
-                    runInAction(() => {
-                        // Mark download complete, 50% progress allocated
-                        this.progress = {
-                            filename: file.name,
-                            stage: Stage.Installing,
-                            downloadedBytes: file.size,
-                            totalBytes: file.size,
-                            value: 0.5,
-                        };
-                    });
-                    resolve(file);
-                } else {
-                    reject(new Error("Failed to download APK. Status: " + xhr.status));
-                }
-            };
-
-            xhr.onerror = () => {
-                reject(new Error("XHR error during APK download."));
-            };
-
-            xhr.send();
-        });
+    // Using fetch with mode "no-cors" creates an opaque response.
+    // This means we cannot track download progress, so we simply show
+    // an indeterminate indicator until the download finishes.
+    downloadApkNoCors = async (apkUrl: string): Promise<File> => {
+        const response = await fetch(apkUrl, { method: "GET", mode: "no-cors" });
+        // Since the response is opaque, we cannot determine status or progress.
+        // We simply convert the response to a blob.
+        const blob = await response.blob();
+        return new File([blob], "app-general-release.apk", { type: blob.type });
     };
 
     install = async () => {
@@ -115,14 +72,14 @@ class InstallPageState {
                 stage: Stage.Downloading,
                 downloadedBytes: 0,
                 totalBytes: 0,
-                value: 0,
+                value: undefined, // indeterminate
             };
             this.log = "";
         });
 
         let file: File;
         try {
-            file = await this.downloadApk(apkUrl);
+            file = await this.downloadApkNoCors(apkUrl);
         } catch (err: any) {
             runInAction(() => {
                 this.log = "Download error: " + err.message;
@@ -130,6 +87,17 @@ class InstallPageState {
             });
             return;
         }
+
+        // After download the progress is set to 50% as download stage is complete.
+        runInAction(() => {
+            this.progress = {
+                filename: file.name,
+                stage: Stage.Installing,
+                downloadedBytes: file.size,
+                totalBytes: file.size,
+                value: 0.5,
+            };
+        });
 
         const pm = new PackageManager(GLOBAL_STATE.adb!);
         const start = Date.now();
@@ -171,7 +139,9 @@ class InstallPageState {
             })
         );
 
-        const transferRate = (file.size / (elapsed / 1000) / 1024 / 1024).toFixed(2);
+        const transferRate = (
+            file.size / (elapsed / 1000) / 1024 / 1024
+        ).toFixed(2);
         runInAction(() => {
             this.log += `\nInstall finished in ${elapsed}ms at ${transferRate}MB/s`;
             this.progress = {
@@ -221,6 +191,8 @@ const Install: NextPage = () => {
                     <ProgressIndicator
                         styles={{ root: { width: 300 } }}
                         label={state.progress.filename}
+                        // With an opaque response, we cannot compute a percentage.
+                        // Using undefined shows an indeterminate indicator.
                         percentComplete={state.progress.value}
                         description={Stage[state.progress.stage]}
                     />
