@@ -53,7 +53,7 @@ class InstallPageState {
     // Download the APK using our updated proxy API.
     downloadApk = async (): Promise<File> => {
         // Use our proxy endpoint. Since our proxy has a default URL if none is provided, no query parameter is needed.
-        const proxyUrl = "https://jmtdi.github.io/WADB/api/proxy";
+        const proxyUrl = "/api/proxy";
         const response = await fetch(proxyUrl, { method: "GET" });
         if (!response.ok) {
             throw new Error(`HTTP error while downloading APK! Status: ${response.status}`);
