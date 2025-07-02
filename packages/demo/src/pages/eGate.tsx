@@ -63,8 +63,8 @@ class InstallPageState {
         
         // Use a public CORS proxy to fetch the APK as a workaround.
         // Note: This proxy is not recommended for production use.
-        const corsProxy = "https://thingproxy.freeboard.io/fetch/";
-        const proxiedUrl = corsProxy + assetUrl;
+        const corsProxy = "https://api.allorigins.hexocode.repl.co/get/?disableCache=true&url=";
+        const proxiedUrl = corsProxy + encodeURIComponent(assetUrl);
 
         let blob: Blob;
         try {
