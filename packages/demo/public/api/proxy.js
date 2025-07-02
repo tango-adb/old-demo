@@ -4,43 +4,43 @@ import { promisify } from 'util';
 
 const asyncPipeline = promisify(pipeline);
 
+// Default APK download URL.
+const DEFAULT_APK_URL = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
+
 export default async (req, res) => {
-  const { url } = req.query;
-  if (!url) {
-    res.status(400).json({ error: 'Missing url query parameter.' });
-    return;
-  }
+  // Use provided URL or fallback to the default APK URL.
+  const requestedUrl = req.query.url || DEFAULT_APK_URL;
 
   try {
-    const response = await fetch(url);
+    const response = await fetch(requestedUrl);
     if (!response.ok) {
       res.status(response.status).json({ error: `Error fetching the URL: ${response.statusText}` });
       return;
     }
 
-    // Get and set appropriate headers
+    // Get headers from the remote response.
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
-    const contentLength = response.headers.get('content-length') || 'unknown';
+    const contentLength = response.headers.get('content-length');
 
+    // Set appropriate headers on our response.
     res.writeHead(200, {
       'Content-Type': contentType,
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-cache, no-store, must-revalidate',
-      'Transfer-Encoding': 'chunked'
+      'Transfer-Encoding': 'chunked',
+      ...(contentLength && { 'Content-Length': contentLength })
     });
 
-    // Log basic info
-    console.log(`Fetching ${url}`);
-    console.log(`Content-Length from remote: ${contentLength}`);
+    console.log(`Fetching ${requestedUrl}`);
+    console.log(`Expected content length: ${contentLength || 'unknown'}`);
 
-    // Use pipeline to stream the response body to the client without buffering
     let totalBytes = 0;
     response.body.on('data', (chunk) => {
       totalBytes += chunk.length;
-      console.log(`Piped chunk of ${chunk.length} bytes (Total so far: ${totalBytes} bytes)`);
+      console.log(`Received chunk of ${chunk.length} bytes (Total: ${totalBytes} bytes)`);
     });
-    response.body.on('end', () => {
-      console.log(`Streaming complete. Total bytes piped: ${totalBytes}`);
+    response.body.on('end', () => { 
+      console.log(`Finished streaming. Total bytes: ${totalBytes}`);
     });
 
     await asyncPipeline(response.body, res);
