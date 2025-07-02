@@ -46,21 +46,19 @@ class InstallPageState {
     constructor() {
         makeAutoObservable(this, {
             progress: observable.ref,
-            install: false,
             options: observable.deep,
         });
     }
 
-    // Download the APK using our proxy, manually reading the stream for more detailed logging.
-    downloadApk = async (apkUrl: string): Promise<File> => {
-        // Append a cache buster to force a fresh download.
-        const cacheBuster = `cb=${Date.now()}`;
-        const proxyBase = "https://jmtdi.github.io/WADB/api/proxy.js?url=[apkUrl]";
-        const targetUrl = `${proxyBase}${encodeURIComponent(apkUrl)}&${cacheBuster}`;
-        const response = await fetch(targetUrl, { method: "GET" });
+    // Download the APK using our updated proxy API.
+    downloadApk = async (): Promise<File> => {
+        // Use our proxy endpoint. Since our proxy has a default URL if none is provided, no query parameter is needed.
+        const proxyUrl = "/api/proxy";
+        const response = await fetch(proxyUrl, { method: "GET" });
         if (!response.ok) {
             throw new Error(`HTTP error while downloading APK! Status: ${response.status}`);
         }
+        // Get the total bytes from the header if provided
         const contentLengthStr = response.headers.get("content-length");
         const totalBytes = contentLengthStr ? parseInt(contentLengthStr) : 0;
         runInAction(() => {
@@ -85,13 +83,13 @@ class InstallPageState {
                 chunks.push(value);
                 received += value.length;
                 chunkCount++;
-                console.log(`Chunk ${chunkCount} received:`, value.length, "Total received so far:", received);
+                console.log(`Chunk ${chunkCount} received: ${value.length} bytes (Total: ${received} bytes)`);
                 runInAction(() => {
                     if (this.progress) {
                         this.progress.downloadedBytes = received;
                         this.progress.value = totalBytes ? (received / totalBytes) * 0.5 : undefined;
                     }
-                    this.log += `Chunk ${chunkCount} received of ${value.length} bytes, total: ${received} bytes\n`;
+                    this.log += `Chunk ${chunkCount} received: ${value.length} bytes, total: ${received} bytes\n`;
                 });
             }
         }
@@ -104,7 +102,6 @@ class InstallPageState {
     };
 
     install = async () => {
-        const apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
         runInAction(() => {
             this.installing = true;
             this.progress = {
@@ -114,12 +111,12 @@ class InstallPageState {
                 totalBytes: 0,
                 value: 0,
             };
-            this.log = "Starting APK download...\n";
+            this.log = "Starting APK download via proxy...\n";
         });
 
         let file: File;
         try {
-            file = await this.downloadApk(apkUrl);
+            file = await this.downloadApk();
             runInAction(() => {
                 this.log += `Download completed: ${file.name} (${file.size} bytes)\n`;
             });
@@ -137,7 +134,7 @@ class InstallPageState {
                 this.progress.stage = Stage.Installing;
                 this.progress.downloadedBytes = file.size;
                 this.progress.totalBytes = file.size;
-                // Mark halfway point since download (phase 1) is complete.
+                // Mark halfway point as download is complete.
                 this.progress.value = 0.5;
             }
             this.log += "Starting installation on device...\n";
