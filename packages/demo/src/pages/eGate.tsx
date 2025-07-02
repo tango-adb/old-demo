@@ -38,13 +38,34 @@ class InstallPageState {
         });
     }
 
-    // Automatic installation: fetch APK from URL, then install it via ADB.
     install = async () => {
-        // URL to auto-download the APK.
-        const apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
+        // Use the GitHub API to get the latest release information.
+        const releaseUrl = "https://api.github.com/repos/offlinesoftwaresolutions/eGate/releases/latest";
+        let assetUrl: string;
+        try {
+            const releaseResponse = await fetch(releaseUrl);
+            if (!releaseResponse.ok) {
+                throw new Error(`Failed to fetch release info: ${releaseResponse.statusText}`);
+            }
+            const releaseData = await releaseResponse.json();
+            // Identify the asset named "app-general-release.apk"
+            const asset = releaseData.assets.find((a: any) => a.name === "app-general-release.apk");
+            if (!asset) {
+                throw new Error("APK asset not found in release.");
+            }
+            assetUrl = asset.browser_download_url;
+        } catch (error: any) {
+            runInAction(() => {
+                this.log += `Release API error: ${error.message}\n`;
+            });
+            return;
+        }
+
+        // Now attempt to fetch the APK using the URL from the release asset.
         let blob: Blob;
         try {
-            const response = await fetch(apkUrl);
+            // Note: Even though we obtained the URL from the API, the actual asset download still requires proper CORS headers.
+            const response = await fetch(assetUrl, { mode: "cors" });
             if (!response.ok) {
                 throw new Error(`Failed to download APK: ${response.statusText}`);
             }
@@ -87,8 +108,7 @@ class InstallPageState {
         const pm = new PackageManager(GLOBAL_STATE.adb);
         const start = Date.now();
 
-        // Create the installation log stream by installing the APK,
-        // while piping the File stream (with progress tracking) to the installer.
+        // Start the installation process using the file stream while tracking progress.
         const installLog = await pm.installStream(
             file.size,
             createFileStream(file)
@@ -110,7 +130,7 @@ class InstallPageState {
                                     stage: Stage.Installing,
                                     uploadedSize: uploaded,
                                     totalSize: file.size,
-                                    value: 0.8, // installation phase starts after upload
+                                    value: 0.8, // installation phase
                                 };
                             }
                         })
@@ -119,7 +139,7 @@ class InstallPageState {
             this.options
         );
 
-        // Wait for the installation log to complete.
+        // Process the installation log.
         const elapsed = Date.now() - start;
         await installLog.pipeTo(
             new WritableStream({
@@ -129,9 +149,7 @@ class InstallPageState {
             })
         );
 
-        const transferRate = (
-            file.size / (elapsed / 1000) / 1024 / 1024
-        ).toFixed(2);
+        const transferRate = (file.size / (elapsed / 1000) / 1024 / 1024).toFixed(2);
         this.log += `\nInstall finished in ${elapsed} ms at ${transferRate} MB/s`;
 
         runInAction(() => {
