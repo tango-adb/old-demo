@@ -61,10 +61,9 @@ class InstallPageState {
             return;
         }
         
-        // Use a public CORS proxy to fetch the APK as a workaround.
-        // Note: This proxy is not recommended for production use.
-        const corsProxy = "https://api.allorigins.hexocode.repl.co/get/?disableCache=true&url=";
-        const proxiedUrl = corsProxy + encodeURIComponent(assetUrl);
+        // Use CORS Anywhere proxy
+        const corsProxy = "https://cors-anywhere.herokuapp.com/";
+        const proxiedUrl = corsProxy + assetUrl;
 
         let blob: Blob;
         try {
@@ -171,7 +170,6 @@ class InstallPageState {
 const state = new InstallPageState();
 
 const InstallEgate: NextPage = () => {
-    // Automatically trigger installation when the component mounts.
     useEffect(() => {
         state.install();
     }, []);
@@ -199,7 +197,7 @@ const InstallEgate: NextPage = () => {
                     onClick={state.install}
                 />
             </Stack>
-
+            
             {state.progress && (
                 <ProgressIndicator
                     styles={{ root: { width: 300, marginTop: 20 } }}
@@ -208,7 +206,7 @@ const InstallEgate: NextPage = () => {
                     description={Stage[state.progress.stage]}
                 />
             )}
-
+            
             {state.log && <pre style={{ marginTop: 20 }}>{state.log}</pre>}
         </Stack>
     );
