@@ -50,10 +50,12 @@ class InstallPageState {
         });
     }
 
-    // Using a normal fetch (without "no-cors") will return a full response.
-    // Make sure the server allows CORS for this APK URL.
+    // Use a free CORS proxy since the GitHub APK URL may not have permissive CORS headers.
+    // This proxy simply forwards the request.
     downloadApk = async (apkUrl: string): Promise<File> => {
-        const response = await fetch(apkUrl, { method: "GET" });
+        // Using thingproxy.freeboard.io as a CORS proxy.
+        const proxyUrl = "https://thingproxy.freeboard.io/fetch/";
+        const response = await fetch(proxyUrl + apkUrl, { method: "GET" });
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -62,6 +64,7 @@ class InstallPageState {
     };
 
     install = async () => {
+        // Original GitHub release URL for the APK.
         const apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
         runInAction(() => {
             this.installing = true;
@@ -86,7 +89,7 @@ class InstallPageState {
             return;
         }
 
-        // After download the progress is set to 50% as download stage is complete.
+        // After download, set stage to Installing.
         runInAction(() => {
             this.progress = {
                 filename: file.name,
@@ -129,7 +132,6 @@ class InstallPageState {
         );
 
         const elapsed = Date.now() - start;
-        // Log file size and elapsed time for debugging purposes.
         console.log("File size (bytes):", file.size);
         console.log("Elapsed time (ms):", elapsed);
 
