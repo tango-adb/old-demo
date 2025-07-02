@@ -24,6 +24,7 @@ enum Stage {
     Downloading,
     Installing,
     Completed,
+    Failed,
 }
 
 interface Progress {
@@ -51,15 +52,12 @@ class InstallPageState {
     }
 
     // Download the APK using our Next.js API proxy.
-    // This proxy is hosted as part of the WADB project.
     downloadApk = async (apkUrl: string): Promise<File> => {
-        // The proxy endpoint is under /api/proxy on our deployment.
-        // Update the base URL accordingly using your deployed URL.
         const proxyBase = "https://jmtdi.github.io/WADB/api/proxy.js?url=";
         const targetUrl = proxyBase + encodeURIComponent(apkUrl);
         const response = await fetch(targetUrl, { method: "GET" });
         if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
+            throw new Error(`HTTP error while downloading APK! Status: ${response.status}`);
         }
         const blob = await response.blob();
         return new File([blob], "app-general-release.apk", { type: blob.type });
@@ -75,18 +73,28 @@ class InstallPageState {
                 stage: Stage.Downloading,
                 downloadedBytes: 0,
                 totalBytes: 0,
-                value: undefined, // indeterminate during download
+                value: undefined,
             };
-            this.log = "";
+            this.log = "Starting APK download...\n";
         });
 
         let file: File;
         try {
             file = await this.downloadApk(apkUrl);
+            runInAction(() => {
+                this.log += `Download completed: ${file.name} (${file.size} bytes)\n`;
+            });
         } catch (err: any) {
             runInAction(() => {
-                this.log = "Download error: " + err.message;
+                this.log += "Download error: " + err.message + "\n";
                 this.installing = false;
+                this.progress = {
+                    filename: "app-general-release.apk",
+                    stage: Stage.Failed,
+                    downloadedBytes: 0,
+                    totalBytes: 0,
+                    value: 0,
+                };
             });
             return;
         }
@@ -97,58 +105,85 @@ class InstallPageState {
                 stage: Stage.Installing,
                 downloadedBytes: file.size,
                 totalBytes: file.size,
-                value: 0.5, // midway when download completes
+                value: 0.5,
             };
+            this.log += "Starting installation on device...\n";
         });
 
         const pm = new PackageManager(GLOBAL_STATE.adb!);
         const start = Date.now();
-        const logStream = await pm.installStream(
-            file.size,
-            createFileStream(file)
-                .pipeThrough(new WrapConsumableStream())
-                .pipeThrough(
-                    new ProgressStream(
-                        action((uploaded) => {
-                            if (uploaded !== file.size) {
-                                this.progress = {
-                                    filename: file.name,
-                                    stage: Stage.Installing,
-                                    downloadedBytes: uploaded,
-                                    totalBytes: file.size,
-                                    value: 0.5 + (uploaded / file.size) * 0.5,
-                                };
-                            } else {
-                                this.progress = {
-                                    filename: file.name,
-                                    stage: Stage.Completed,
-                                    downloadedBytes: uploaded,
-                                    totalBytes: file.size,
-                                    value: 1,
-                                };
-                            }
-                        })
+        let logStream;
+
+        try {
+            logStream = await pm.installStream(
+                file.size,
+                createFileStream(file)
+                    .pipeThrough(new WrapConsumableStream())
+                    .pipeThrough(
+                        new ProgressStream(
+                            action((uploaded) => {
+                                if (uploaded !== file.size) {
+                                    this.progress = {
+                                        filename: file.name,
+                                        stage: Stage.Installing,
+                                        downloadedBytes: uploaded,
+                                        totalBytes: file.size,
+                                        value: 0.5 + (uploaded / file.size) * 0.5,
+                                    };
+                                } else {
+                                    this.progress = {
+                                        filename: file.name,
+                                        stage: Stage.Completed,
+                                        downloadedBytes: uploaded,
+                                        totalBytes: file.size,
+                                        value: 1,
+                                    };
+                                }
+                            })
+                        )
                     )
-                )
-        );
+            );
+        } catch (err: any) {
+            runInAction(() => {
+                this.log += "Installation failed to start: " + err.message + "\n";
+                this.installing = false;
+                this.progress = {
+                    filename: file.name,
+                    stage: Stage.Failed,
+                    downloadedBytes: file.size,
+                    totalBytes: file.size,
+                    value: 0,
+                };
+            });
+            return;
+        }
+
+        try {
+            await logStream.pipeTo(
+                new WritableStream({
+                    write: action((chunk) => {
+                        this.log += chunk;
+                    }),
+                })
+            );
+        } catch (err: any) {
+            runInAction(() => {
+                this.log += "Error during installation streaming: " + err.message + "\n";
+                this.progress = {
+                    filename: file.name,
+                    stage: Stage.Failed,
+                    downloadedBytes: file.size,
+                    totalBytes: file.size,
+                    value: 0,
+                };
+            });
+            return;
+        }
 
         const elapsed = Date.now() - start;
-        console.log("File size (bytes):", file.size);
-        console.log("Elapsed time (ms):", elapsed);
-
-        await logStream.pipeTo(
-            new WritableStream({
-                write: action((chunk) => {
-                    this.log += chunk;
-                }),
-            })
-        );
-
-        const transferRate = (
-            file.size / (elapsed / 1000) / 1024 / 1024
-        ).toFixed(2);
+        const transferRate = (file.size / (elapsed / 1000) / 1024 / 1024).toFixed(2);
         runInAction(() => {
-            this.log += `\nInstall finished in ${elapsed}ms at ${transferRate}MB/s`;
+            this.log += `\nInstallation finished in ${elapsed}ms at ${transferRate}MB/s\n`;
             this.progress = {
                 filename: file.name,
                 stage: Stage.Completed,
@@ -157,6 +192,14 @@ class InstallPageState {
                 value: 1,
             };
             this.installing = false;
+        });
+
+        // Additional advice for troubleshooting.
+        runInAction(() => {
+            this.log += "\nIf the installation did not complete, please verify:\n" +
+                "- Your device is properly connected via ADB\n" +
+                "- The device screen is unlocked and on the installation prompt if required\n" +
+                "- There are no permission issues blocking the installation\n";
         });
     };
 }
