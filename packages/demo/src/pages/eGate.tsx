@@ -51,7 +51,7 @@ class InstallPageState {
         });
     }
 
-    // Download the APK using our Next.js API proxy.
+    // Download the APK using our Next.js API proxy with manual stream reading for progress update.
     downloadApk = async (apkUrl: string): Promise<File> => {
         const proxyBase = "https://jmtdi.github.io/WADB/api/proxy.js?url=";
         const targetUrl = proxyBase + encodeURIComponent(apkUrl);
@@ -59,7 +59,37 @@ class InstallPageState {
         if (!response.ok) {
             throw new Error(`HTTP error while downloading APK! Status: ${response.status}`);
         }
-        const blob = await response.blob();
+        // Get total bytes from header (if provided)
+        const contentLengthStr = response.headers.get("content-length");
+        const totalBytes = contentLengthStr ? parseInt(contentLengthStr) : 0;
+        runInAction(() => {
+            if (this.progress) {
+                this.progress.totalBytes = totalBytes;
+            }
+        });
+        // Read the stream manually to update progress.
+        const reader = response.body?.getReader();
+        if (!reader) {
+            throw new Error("ReadableStream not supported in this browser.");
+        }
+        const chunks: Uint8Array[] = [];
+        let received = 0;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            if (value) {
+                chunks.push(value);
+                received += value.length;
+                runInAction(() => {
+                    if (this.progress) {
+                        this.progress.downloadedBytes = received;
+                        // Calculate progress only during download phase (first half of indicator)
+                        this.progress.value = totalBytes ? (received / totalBytes) * 0.5 : undefined;
+                    }
+                });
+            }
+        }
+        const blob = new Blob(chunks);
         return new File([blob], "app-general-release.apk", { type: blob.type });
     };
 
@@ -73,7 +103,7 @@ class InstallPageState {
                 stage: Stage.Downloading,
                 downloadedBytes: 0,
                 totalBytes: 0,
-                value: undefined,
+                value: 0,
             };
             this.log = "Starting APK download...\n";
         });
@@ -88,25 +118,19 @@ class InstallPageState {
             runInAction(() => {
                 this.log += "Download error: " + err.message + "\n";
                 this.installing = false;
-                this.progress = {
-                    filename: "app-general-release.apk",
-                    stage: Stage.Failed,
-                    downloadedBytes: 0,
-                    totalBytes: 0,
-                    value: 0,
-                };
+                if (this.progress)
+                    this.progress.stage = Stage.Failed;
             });
             return;
         }
 
         runInAction(() => {
-            this.progress = {
-                filename: file.name,
-                stage: Stage.Installing,
-                downloadedBytes: file.size,
-                totalBytes: file.size,
-                value: 0.5,
-            };
+            if (this.progress) {
+                this.progress.stage = Stage.Installing;
+                this.progress.downloadedBytes = file.size;
+                this.progress.totalBytes = file.size;
+                this.progress.value = 0.5;
+            }
             this.log += "Starting installation on device...\n";
         });
 
@@ -123,21 +147,22 @@ class InstallPageState {
                         new ProgressStream(
                             action((uploaded) => {
                                 if (uploaded !== file.size) {
-                                    this.progress = {
-                                        filename: file.name,
-                                        stage: Stage.Installing,
-                                        downloadedBytes: uploaded,
-                                        totalBytes: file.size,
-                                        value: 0.5 + (uploaded / file.size) * 0.5,
-                                    };
+                                    runInAction(() => {
+                                        if (this.progress) {
+                                            this.progress.stage = Stage.Installing;
+                                            this.progress.downloadedBytes = uploaded;
+                                            // The second half of the progress indicator.
+                                            this.progress.value = 0.5 + (uploaded / file.size) * 0.5;
+                                        }
+                                    });
                                 } else {
-                                    this.progress = {
-                                        filename: file.name,
-                                        stage: Stage.Completed,
-                                        downloadedBytes: uploaded,
-                                        totalBytes: file.size,
-                                        value: 1,
-                                    };
+                                    runInAction(() => {
+                                        if (this.progress) {
+                                            this.progress.stage = Stage.Completed;
+                                            this.progress.downloadedBytes = uploaded;
+                                            this.progress.value = 1;
+                                        }
+                                    });
                                 }
                             })
                         )
@@ -147,13 +172,7 @@ class InstallPageState {
             runInAction(() => {
                 this.log += "Installation failed to start: " + err.message + "\n";
                 this.installing = false;
-                this.progress = {
-                    filename: file.name,
-                    stage: Stage.Failed,
-                    downloadedBytes: file.size,
-                    totalBytes: file.size,
-                    value: 0,
-                };
+                if (this.progress) this.progress.stage = Stage.Failed;
             });
             return;
         }
@@ -169,13 +188,7 @@ class InstallPageState {
         } catch (err: any) {
             runInAction(() => {
                 this.log += "Error during installation streaming: " + err.message + "\n";
-                this.progress = {
-                    filename: file.name,
-                    stage: Stage.Failed,
-                    downloadedBytes: file.size,
-                    totalBytes: file.size,
-                    value: 0,
-                };
+                if (this.progress) this.progress.stage = Stage.Failed;
             });
             return;
         }
@@ -184,22 +197,20 @@ class InstallPageState {
         const transferRate = (file.size / (elapsed / 1000) / 1024 / 1024).toFixed(2);
         runInAction(() => {
             this.log += `\nInstallation finished in ${elapsed}ms at ${transferRate}MB/s\n`;
-            this.progress = {
-                filename: file.name,
-                stage: Stage.Completed,
-                downloadedBytes: file.size,
-                totalBytes: file.size,
-                value: 1,
-            };
+            if (this.progress) {
+                this.progress.stage = Stage.Completed;
+                this.progress.downloadedBytes = file.size;
+                this.progress.value = 1;
+            }
             this.installing = false;
         });
 
         // Additional advice for troubleshooting.
         runInAction(() => {
             this.log += "\nIf the installation did not complete, please verify:\n" +
-                "- Your device is properly connected via ADB\n" +
-                "- The device screen is unlocked and on the installation prompt if required\n" +
-                "- There are no permission issues blocking the installation\n";
+                "- Your device is properly connected via WebUSB and USB debugging is enabled.\n" +
+                "- The device screen is unlocked, and you have granted any necessary permissions.\n" +
+                "- There are no permission issues blocking the installation.\n";
         });
     };
 }
