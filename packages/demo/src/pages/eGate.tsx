@@ -51,9 +51,9 @@ class InstallPageState {
         });
     }
 
-    // Download the APK using our Next.js API proxy with manual stream reading for better progress logging.
+    // Download the APK using our proxy, manually reading the stream for more detailed logging.
     downloadApk = async (apkUrl: string): Promise<File> => {
-        // Append a random query parameter to bypass potential caching.
+        // Append a cache buster to force a fresh download.
         const cacheBuster = `cb=${Date.now()}`;
         const proxyBase = "https://jmtdi.github.io/WADB/api/proxy.js?url=";
         const targetUrl = `${proxyBase}${encodeURIComponent(apkUrl)}&${cacheBuster}`;
@@ -69,29 +69,36 @@ class InstallPageState {
             }
         });
         console.log("Total expected bytes:", totalBytes);
+        this.log += `Total expected bytes: ${totalBytes}\n`;
 
         const reader = response.body?.getReader();
         if (!reader) {
-            throw new Error("ReadableStream is not supported in this browser.");
+            throw new Error("ReadableStream not supported in this browser.");
         }
         const chunks: Uint8Array[] = [];
         let received = 0;
+        let chunkCount = 0;
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
             if (value) {
                 chunks.push(value);
                 received += value.length;
-                console.log("Chunk received:", value.length, "Total received so far:", received);
+                chunkCount++;
+                console.log(`Chunk ${chunkCount} received:`, value.length, "Total received so far:", received);
                 runInAction(() => {
                     if (this.progress) {
                         this.progress.downloadedBytes = received;
                         this.progress.value = totalBytes ? (received / totalBytes) * 0.5 : undefined;
                     }
-                    this.log += `Received chunk of ${value.length} bytes, total: ${received} bytes\n`;
+                    this.log += `Chunk ${chunkCount} received of ${value.length} bytes, total: ${received} bytes\n`;
                 });
             }
         }
+        console.log("Download complete, total bytes received:", received);
+        runInAction(() => {
+            this.log += `Download complete, total bytes received: ${received}\n`;
+        });
         const blob = new Blob(chunks);
         return new File([blob], "app-general-release.apk", { type: blob.type });
     };
@@ -130,6 +137,7 @@ class InstallPageState {
                 this.progress.stage = Stage.Installing;
                 this.progress.downloadedBytes = file.size;
                 this.progress.totalBytes = file.size;
+                // Mark halfway point since download (phase 1) is complete.
                 this.progress.value = 0.5;
             }
             this.log += "Starting installation on device...\n";
