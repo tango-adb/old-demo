@@ -61,9 +61,15 @@ class InstallPageState {
             return;
         }
         
-        // Use CORS Anywhere proxy
-        const corsProxy = "https://cors-anywhere.herokuapp.com/";
-        const proxiedUrl = corsProxy + assetUrl;
+        // Use your Cloudflare Worker to bypass CORS.
+        // Your worker URL is: https://muddy-bush-572d.carsforall1.workers.dev/
+        // It is assumed that your worker proxies the request for the APK.
+        const workerUrl = "https://muddy-bush-572d.carsforall1.workers.dev/";
+        // Option 1: If your Worker has the APK URL hard-coded, you can simply use the worker URL.
+        // Option 2: If your Worker expects the target URL as a query parameter,
+        // adjust like: workerUrl + "?url=" + encodeURIComponent(assetUrl);
+        // For this example, we'll assume Option 1.
+        const proxiedUrl = workerUrl;
 
         let blob: Blob;
         try {
