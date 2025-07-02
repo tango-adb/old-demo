@@ -1,4 +1,8 @@
 import fetch from 'node-fetch';
+import { pipeline } from 'stream';
+import { promisify } from 'util';
+
+const asyncPipeline = promisify(pipeline);
 
 export default async (req, res) => {
   const { url } = req.query;
@@ -14,10 +18,10 @@ export default async (req, res) => {
       return;
     }
 
-    // Use content-type from the fetched response or default to octet-stream.
+    // Get and set appropriate headers
     const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    const contentLength = response.headers.get('content-length') || 'unknown';
 
-    // Set headers to enable streaming and to prevent caching.
     res.writeHead(200, {
       'Content-Type': contentType,
       'Access-Control-Allow-Origin': '*',
@@ -25,27 +29,27 @@ export default async (req, res) => {
       'Transfer-Encoding': 'chunked'
     });
 
-    // Create a reader from the fetch response stream.
-    const reader = response.body.getReader();
+    // Log basic info
+    console.log(`Fetching ${url}`);
+    console.log(`Content-Length from remote: ${contentLength}`);
 
-    const readChunk = () => {
-      reader.read().then(({ done, value }) => {
-        if (done) {
-          res.end();
-          return;
-        }
-        // Write the chunk to the response as soon as it's available.
-        res.write(value);
-        // Continue reading the next chunk.
-        readChunk();
-      }).catch((err) => {
-        console.error("Error reading stream:", err);
-        res.end();
-      });
-    };
+    // Use pipeline to stream the response body to the client without buffering
+    let totalBytes = 0;
+    response.body.on('data', (chunk) => {
+      totalBytes += chunk.length;
+      console.log(`Piped chunk of ${chunk.length} bytes (Total so far: ${totalBytes} bytes)`);
+    });
+    response.body.on('end', () => {
+      console.log(`Streaming complete. Total bytes piped: ${totalBytes}`);
+    });
 
-    readChunk();
+    await asyncPipeline(response.body, res);
   } catch (error) {
-    res.status(500).json({ error: 'Internal server error', details: error.message });
+    console.error("Error in proxy:", error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Internal server error', details: error.message });
+    } else {
+      res.end();
+    }
   }
 };
