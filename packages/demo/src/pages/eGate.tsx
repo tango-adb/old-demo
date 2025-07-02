@@ -55,7 +55,7 @@ class InstallPageState {
     downloadApk = async (apkUrl: string): Promise<File> => {
         // Append a cache buster to force a fresh download.
         const cacheBuster = `cb=${Date.now()}`;
-        const proxyBase = "https://jmtdi.github.io/WADB/api/proxy.js?url=";
+        const proxyBase = "https://jmtdi.github.io/WADB/api/proxy.js?url=[apkUrl]";
         const targetUrl = `${proxyBase}${encodeURIComponent(apkUrl)}&${cacheBuster}`;
         const response = await fetch(targetUrl, { method: "GET" });
         if (!response.ok) {
