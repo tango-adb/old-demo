@@ -99,41 +99,49 @@ class InstallPageState {
             // Use the response body as the file stream with proper stream typing
             const installStream = response.body
                 .pipeThrough(consumableStream)
-                .pipeThrough(new ProgressStream(
-                    action((downloaded: number) => {
-                        if (downloaded < fileInfo.size) {
-                            this.progress = {
-                                filename: fileInfo.name,
-                                stage: Stage.Downloading,
-                                downloadedSize: downloaded,
-                                totalSize: fileInfo.size,
-                                value: fileInfo.size > 0 ? (downloaded / fileInfo.size) * 0.8 : undefined,
-                            };
-                        } else {
-                            this.progress = {
-                                filename: fileInfo.name,
-                                stage: Stage.Installing,
-                                downloadedSize: downloaded,
-                                totalSize: fileInfo.size,
-                                value: 0.8,
-                            };
-                        }
-                    })
+                .pipeThrough(
+                    new ProgressStream(
+                        action((downloaded: number) => {
+                            if (downloaded < fileInfo.size) {
+                                this.progress = {
+                                    filename: fileInfo.name,
+                                    stage: Stage.Downloading,
+                                    downloadedSize: downloaded,
+                                    totalSize: fileInfo.size,
+                                    value:
+                                        fileInfo.size > 0
+                                            ? (downloaded / fileInfo.size) * 0.8
+                                            : undefined,
+                                };
+                            } else {
+                                this.progress = {
+                                    filename: fileInfo.name,
+                                    stage: Stage.Installing,
+                                    downloadedSize: downloaded,
+                                    totalSize: fileInfo.size,
+                                    value: 0.8,
+                                };
+                            }
+                        })
+                    )
                 );
 
             // Install the APK using the stream from the download
             const logStream = await pm.installStream(fileInfo.size, installStream, this.options);
 
             const elapsed = Date.now() - start;
-            await logStream.pipeTo(new WritableStream({
-                write: action((chunk: string) => {
-                    this.log += chunk;
-                }),
-            }));
+            await logStream.pipeTo(
+                new WritableStream({
+                    write: action((chunk: string) => {
+                        this.log += chunk;
+                    }),
+                })
+            );
 
-            const transferRate = fileInfo.size > 0
-                ? (fileInfo.size / (elapsed / 1000) / 1024 / 1024).toFixed(2)
-                : "unknown";
+            const transferRate =
+                fileInfo.size > 0
+                    ? (fileInfo.size / (elapsed / 1000) / 1024 / 1024).toFixed(2)
+                    : "unknown";
             runInAction(() => {
                 this.log += `\nInstall finished in ${elapsed}ms at ${transferRate}MB/s.`;
                 this.progress = {
