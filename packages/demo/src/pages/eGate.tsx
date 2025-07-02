@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from "react";
 import { PackageManager, PackageManagerInstallOptions } from "@yume-chan/android-bin";
-import { WrapConsumableStream, WritableStream } from "@yume-chan/stream-extra";
+import { Consumable, WrapConsumableStream, WritableStream } from "@yume-chan/stream-extra";
 import { action, runInAction } from "mobx";
 import { observer } from "mobx-react-lite";
 
-// NOTE: This component assumes that you have an ADB connection established.
-// Replace "window.GLOBAL_ADB" with your actual ADB instance or use a context/hook that provides it.
 declare global {
     interface Window {
         GLOBAL_ADB: any;
@@ -85,31 +83,36 @@ const EGateInstaller: React.FC = () => {
             const pm = new PackageManager(adb);
             const startTime = Date.now();
 
-            // Use TransformStream to monitor progress
-            const progressStream = (apkBlob.stream()).pipeThrough(new TransformStream({
-                transform(chunk, controller) {
-                    runInAction(() => {
-                        setProgress((prev) => {
-                            if (prev) {
-                                const newUploaded = prev.uploadedSize + chunk.length;
-                                const percent = newUploaded / apkBlob.size;
-                                return {
-                                    ...prev,
-                                    uploadedSize: newUploaded,
-                                    percent: percent < 0.8 ? percent * 0.8 : 0.8, // reserve 80% for upload progress
-                                    stage: newUploaded < apkBlob.size ? Stage.Uploading : Stage.Installing,
-                                    totalSize: apkBlob.size,
-                                };
-                            }
-                            return prev;
+            // Ensure the blob stream is typed as ReadableStream<Uint8Array>
+            const blobStream = apkBlob.stream() as ReadableStream<Uint8Array>;
+
+            // Create a TransformStream that outputs Consumable<Uint8Array> and tracks progress.
+            const progressStream = blobStream.pipeThrough(
+                new TransformStream<Uint8Array, Consumable<Uint8Array>>({
+                    transform(chunk, controller) {
+                        runInAction(() => {
+                            setProgress((prev) => {
+                                if (prev) {
+                                    const newUploaded = prev.uploadedSize + chunk.length;
+                                    const percent = newUploaded / apkBlob.size;
+                                    return {
+                                        ...prev,
+                                        uploadedSize: newUploaded,
+                                        percent: percent < 0.8 ? percent * 0.8 : 0.8,
+                                        stage: newUploaded < apkBlob.size ? Stage.Uploading : Stage.Installing,
+                                        totalSize: apkBlob.size,
+                                    };
+                                }
+                                return prev;
+                            });
                         });
-                    });
-                    controller.enqueue(chunk);
-                },
-                flush(controller) {
-                    controller.terminate();
-                }
-            }));
+                        controller.enqueue(chunk);
+                    },
+                    flush(controller) {
+                        controller.terminate();
+                    }
+                })
+            );
 
             const installLog = await pm.installStream(apkBlob.size, progressStream, installOptions);
 
