@@ -25,6 +25,7 @@ interface Progress {
 
 type Variant = "general" | "lg-classic" | "external";
 
+// Map each variant to its expected file name.
 const variantAssetMap: Record<Variant, string> = {
     "general": "app-general-release.apk",
     "lg-classic": "app-lgclassic-release.apk",
@@ -47,34 +48,11 @@ class InstallPageState {
     }
 
     install = async (variant: Variant) => {
-        // Use the GitHub API to get the latest release information.
-        const releaseUrl = "https://api.github.com/repos/offlinesoftwaresolutions/eGate/releases/latest";
-        let assetUrl: string;
-        try {
-            const releaseResponse = await fetch(releaseUrl);
-            if (!releaseResponse.ok) {
-                throw new Error(`Failed to fetch release info: ${releaseResponse.statusText}`);
-            }
-            const releaseData = await releaseResponse.json();
-            // Determine the asset name based on the selected variant.
-            const assetName = variantAssetMap[variant];
-            // Identify the asset based on the asset name.
-            const asset = releaseData.assets.find((a: any) => a.name === assetName);
-            if (!asset) {
-                throw new Error(`APK asset "${assetName}" not found in release.`);
-            }
-            assetUrl = asset.browser_download_url;
-        } catch (error: any) {
-            runInAction(() => {
-                this.log += `Release API error: ${error.message}\n`;
-            });
-            return;
-        }
-
-        // Use Cloudflare Worker URL with a query parameter to indicate the variant.
+        // Use your Cloudflare Worker URL with the variant query parameter.
         const workerUrl = "https://egate.carsforall1.workers.dev/";
         const proxiedUrl = `${workerUrl}?variant=${encodeURIComponent(variant)}`;
 
+        // Download the APK file via the worker.
         let blob: Blob;
         try {
             const response = await fetch(proxiedUrl, { mode: "cors" });
@@ -84,13 +62,14 @@ class InstallPageState {
             blob = await response.blob();
         } catch (error: any) {
             runInAction(() => {
-                this.log += `Download error: ${error.message}\n`;
+                this.log += `Download error for variant "${variant}": ${error.message}\n`;
             });
             return;
         }
 
-        // Convert the blob into a File-like object.
-        const file = new File([blob], variantAssetMap[variant], {
+        // Create a File object using the expected file name for this variant.
+        const fileName = variantAssetMap[variant];
+        const file = new File([blob], fileName, {
             type: blob.type,
             lastModified: Date.now(),
         });
@@ -108,7 +87,7 @@ class InstallPageState {
             this.log = `Installing "${variant}" variant...\n`;
         });
 
-        // Ensure that a valid ADB connection exists.
+        // Make sure a valid ADB connection is available.
         if (!GLOBAL_STATE.adb) {
             runInAction(() => {
                 this.log += "ADB connection not established.\n";
@@ -120,7 +99,7 @@ class InstallPageState {
         const pm = new PackageManager(GLOBAL_STATE.adb);
         const start = Date.now();
 
-        // Start the installation process using our file stream while tracking progress.
+        // Start the installation process using a file stream and track the progress.
         const installLog = await pm.installStream(
             file.size,
             createFileStream(file)
@@ -134,7 +113,7 @@ class InstallPageState {
                                     stage: Stage.Uploading,
                                     uploadedSize: uploaded,
                                     totalSize: file.size,
-                                    value: (uploaded / file.size) * 0.8, // uploading accounts for 80%
+                                    value: (uploaded / file.size) * 0.8, // Uploading accounts for 80% of progress.
                                 };
                             } else {
                                 this.progress = {
@@ -142,7 +121,7 @@ class InstallPageState {
                                     stage: Stage.Installing,
                                     uploadedSize: uploaded,
                                     totalSize: file.size,
-                                    value: 0.8, // installation phase starts
+                                    value: 0.8, // Installation phase starts at 80%.
                                 };
                             }
                         })
@@ -211,7 +190,7 @@ const InstallEgate: NextPage = () => {
                 />
                 <PrimaryButton
                     disabled={state.installing || !GLOBAL_STATE.adb}
-                    text="External accessibility"
+                    text="External Accessibility"
                     onClick={() => state.install("external")}
                 />
             </Stack>
