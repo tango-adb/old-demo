@@ -83,22 +83,28 @@ const EGateInstaller: React.FC = () => {
             const pm = new PackageManager(adb);
             const startTime = Date.now();
 
-            // Ensure the blob stream is typed as ReadableStream<Uint8Array>
+            // Pipe the blob's stream into a WrapConsumableStream to convert it into a stream of Consumable<Uint8Array>
             const blobStream = apkBlob.stream() as ReadableStream<Uint8Array>;
+            const wrapStream = new WrapConsumableStream();
+            await blobStream.pipeTo(wrapStream.writable);
 
-            // Create a TransformStream that outputs Consumable<Uint8Array> and tracks progress.
-            const progressStream = blobStream.pipeThrough(
-                new TransformStream<Uint8Array, Consumable<Uint8Array>>({
+            // Now intercept the stream to track progress. The input is Consumable<Uint8Array>,
+            // and we output the same type without modification.
+            const progressStream = wrapStream.readable.pipeThrough(
+                new TransformStream<Consumable<Uint8Array>, Consumable<Uint8Array>>({
                     transform(chunk, controller) {
                         runInAction(() => {
                             setProgress((prev) => {
                                 if (prev) {
-                                    const newUploaded = prev.uploadedSize + chunk.length;
+                                    // Since each chunk is already a consumable wrapping a Uint8Array, we can access its raw value via chunk.value.
+                                    // Note: This assumes that the Consumable type has a "value" property.
+                                    const chunkValue = chunk.value;
+                                    const newUploaded = prev.uploadedSize + chunkValue.length;
                                     const percent = newUploaded / apkBlob.size;
                                     return {
                                         ...prev,
                                         uploadedSize: newUploaded,
-                                        percent: percent < 0.8 ? percent * 0.8 : 0.8,
+                                        percent: percent < 0.8 ? percent * 0.8 : 0.8, // reserve 80% for upload progress
                                         stage: newUploaded < apkBlob.size ? Stage.Uploading : Stage.Installing,
                                         totalSize: apkBlob.size,
                                     };
@@ -116,11 +122,13 @@ const EGateInstaller: React.FC = () => {
 
             const installLog = await pm.installStream(apkBlob.size, progressStream, installOptions);
 
-            await installLog.pipeTo(new WritableStream({
-                write: action((chunk: string) => {
-                    setLog((prev) => prev + chunk);
-                }),
-            }));
+            await installLog.pipeTo(
+                new WritableStream({
+                    write: action((chunk: string) => {
+                        setLog((prev) => prev + chunk);
+                    }),
+                })
+            );
 
             const elapsedTime = Date.now() - startTime;
             runInAction(() => {
