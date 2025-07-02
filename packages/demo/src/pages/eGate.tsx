@@ -50,43 +50,23 @@ class InstallPageState {
         });
     }
 
-    // Try multiple free CORS proxies.
+    // Download the APK using our Next.js API proxy.
+    // This proxy is hosted as part of the WADB project.
     downloadApk = async (apkUrl: string): Promise<File> => {
-        const proxies = [
-            "https://thingproxy.freeboard.io/fetch/",
-            "https://api.allorigins.hexocode.repl.co/get?disableCache=true&url="
-        ];
-        let lastError: any;
-        for (const proxy of proxies) {
-            try {
-                // If using AllOrigins, we need to encode the target URL.
-                const targetUrl = proxy.includes("allorigins")
-                    ? proxy + encodeURIComponent(apkUrl)
-                    : proxy + apkUrl;
-                const response = await fetch(targetUrl, { method: "GET" });
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                let blob: Blob;
-                // For AllOrigins, the response comes as JSON with a "contents" property.
-                if (proxy.includes("allorigins")) {
-                    const data = await response.json();
-                    // Convert the "contents" string to a Blob.
-                    // Note: This may not work correctly for binary data. If possible, try to use a proxy that supports binary passthrough.
-                    blob = new Blob([data.contents]);
-                } else {
-                    blob = await response.blob();
-                }
-                return new File([blob], "app-general-release.apk", { type: blob.type });
-            } catch (err: any) {
-                lastError = err;
-                console.error(`Proxy ${proxy} failed with error:`, err);
-            }
+        // The proxy endpoint is under /api/proxy on our deployment.
+        // Update the base URL accordingly using your deployed URL.
+        const proxyBase = "https://jmtdi.github.io/WADB/api/proxy?url=";
+        const targetUrl = proxyBase + encodeURIComponent(apkUrl);
+        const response = await fetch(targetUrl, { method: "GET" });
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
-        throw lastError;
+        const blob = await response.blob();
+        return new File([blob], "app-general-release.apk", { type: blob.type });
     };
 
     install = async () => {
+        // Original APK URL from GitHub.
         const apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
         runInAction(() => {
             this.installing = true;
@@ -95,7 +75,7 @@ class InstallPageState {
                 stage: Stage.Downloading,
                 downloadedBytes: 0,
                 totalBytes: 0,
-                value: undefined, // indeterminate
+                value: undefined, // indeterminate during download
             };
             this.log = "";
         });
@@ -117,7 +97,7 @@ class InstallPageState {
                 stage: Stage.Installing,
                 downloadedBytes: file.size,
                 totalBytes: file.size,
-                value: 0.5,
+                value: 0.5, // midway when download completes
             };
         });
 
@@ -187,7 +167,7 @@ const Install: NextPage = () => {
     return (
         <Stack {...RouteStackProps}>
             <Head>
-                <title>Install eGate APK - Tango</title>
+                <title>Install eGate APK - WADB</title>
             </Head>
 
             <Stack horizontal tokens={{ childrenGap: 10 }}>
