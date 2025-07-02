@@ -29,8 +29,9 @@ enum Stage {
 interface Progress {
     filename: string;
     stage: Stage;
-    uploadedSize: number;
-    totalSize: number;
+    downloadedBytes: number;
+    totalBytes: number;
+    // Use a value between 0 and 1
     value: number | undefined;
 }
 
@@ -50,105 +51,85 @@ class InstallPageState {
         });
     }
 
+    downloadApk = (apkUrl: string): Promise<File> => {
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open("GET", apkUrl, true);
+            xhr.responseType = "arraybuffer";
+
+            xhr.onprogress = (event) => {
+                runInAction(() => {
+                    const total = event.lengthComputable ? event.total : 0;
+                    const loaded = event.loaded;
+                    let progressValue: number | undefined;
+                    if (event.lengthComputable) {
+                        progressValue = Math.min((loaded / total) * 0.5, 0.5);
+                    } else {
+                        progressValue = undefined;
+                    }
+                    this.progress = {
+                        filename: "app-general-release.apk",
+                        stage: Stage.Downloading,
+                        downloadedBytes: loaded,
+                        totalBytes: total,
+                        value: progressValue,
+                    };
+                });
+            };
+
+            xhr.onload = () => {
+                if (xhr.status === 200) {
+                    const arrayBuffer = xhr.response;
+                    const blob = new Blob([arrayBuffer]);
+                    const file = new File([blob], "app-general-release.apk", { type: blob.type });
+                    runInAction(() => {
+                        // Mark download complete, 50% progress allocated
+                        this.progress = {
+                            filename: file.name,
+                            stage: Stage.Installing,
+                            downloadedBytes: file.size,
+                            totalBytes: file.size,
+                            value: 0.5,
+                        };
+                    });
+                    resolve(file);
+                } else {
+                    reject(new Error("Failed to download APK. Status: " + xhr.status));
+                }
+            };
+
+            xhr.onerror = () => {
+                reject(new Error("XHR error during APK download."));
+            };
+
+            xhr.send();
+        });
+    };
+
     install = async () => {
         const apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
-        console.log("Starting download from: " + apkUrl);
-
         runInAction(() => {
             this.installing = true;
             this.progress = {
                 filename: "app-general-release.apk",
                 stage: Stage.Downloading,
-                uploadedSize: 0,
-                totalSize: 0,
+                downloadedBytes: 0,
+                totalBytes: 0,
                 value: 0,
             };
             this.log = "";
         });
 
-        const response = await fetch(apkUrl, {
-            method: "GET",
-            mode: "cors",
-            redirect: "follow",
-        });
-        console.log("Response status:", response.status);
-
-        if (!response.ok || !response.body) {
+        let file: File;
+        try {
+            file = await this.downloadApk(apkUrl);
+        } catch (err: any) {
             runInAction(() => {
-                this.log = "Failed to download APK. Response not OK or missing body.";
+                this.log = "Download error: " + err.message;
                 this.installing = false;
             });
-            console.error("Failed to download APK");
             return;
         }
-
-        const totalSizeHeader = response.headers.get("content-length");
-        const hasContentLength = totalSizeHeader !== null;
-        let totalSize = hasContentLength ? parseInt(totalSizeHeader!, 10) : 0;
-        if (!hasContentLength) {
-            console.warn("No content-length header found. Using indeterminate progress.");
-        } else {
-            console.log("Content-Length:", totalSize);
-        }
-        runInAction(() => {
-            this.progress = {
-                filename: "app-general-release.apk",
-                stage: Stage.Downloading,
-                uploadedSize: 0,
-                totalSize,
-                value: hasContentLength ? 0 : undefined,
-            };
-        });
-
-        const reader = response.body.getReader();
-        let receivedLength = 0;
-        const chunks: Uint8Array[] = [];
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) {
-                console.log("Download complete. Total bytes received:", receivedLength);
-                break;
-            }
-            if (value) {
-                chunks.push(value);
-                receivedLength += value.length;
-                console.log(`Received ${value.length} bytes, total ${receivedLength}`);
-                runInAction(() => {
-                    if (hasContentLength && totalSize > 0) {
-                        this.progress = {
-                            filename: "app-general-release.apk",
-                            stage: Stage.Downloading,
-                            uploadedSize: receivedLength,
-                            totalSize,
-                            value: Math.min((receivedLength / totalSize) * 0.5, 0.5),
-                        };
-                    } else {
-                        // Without content-length, no percentage available.
-                        this.progress = {
-                            filename: "app-general-release.apk",
-                            stage: Stage.Downloading,
-                            uploadedSize: receivedLength,
-                            totalSize: 0,
-                            value: undefined,
-                        };
-                    }
-                });
-            }
-        }
-
-        const blob = new Blob(chunks);
-        const file = new File([blob], "app-general-release.apk", { type: blob.type });
-        console.log("File created:", file);
-
-        runInAction(() => {
-            this.progress = {
-                filename: file.name,
-                stage: Stage.Installing,
-                uploadedSize: file.size,
-                totalSize: file.size,
-                value: 0.5,
-            };
-        });
 
         const pm = new PackageManager(GLOBAL_STATE.adb!);
         const start = Date.now();
@@ -163,16 +144,16 @@ class InstallPageState {
                                 this.progress = {
                                     filename: file.name,
                                     stage: Stage.Installing,
-                                    uploadedSize: uploaded,
-                                    totalSize: file.size,
+                                    downloadedBytes: uploaded,
+                                    totalBytes: file.size,
                                     value: 0.5 + (uploaded / file.size) * 0.5,
                                 };
                             } else {
                                 this.progress = {
                                     filename: file.name,
                                     stage: Stage.Completed,
-                                    uploadedSize: uploaded,
-                                    totalSize: file.size,
+                                    downloadedBytes: uploaded,
+                                    totalBytes: file.size,
                                     value: 1,
                                 };
                             }
@@ -190,21 +171,18 @@ class InstallPageState {
             })
         );
 
-        const transferRate = (
-            file.size / (elapsed / 1000) / 1024 / 1024
-        ).toFixed(2);
+        const transferRate = (file.size / (elapsed / 1000) / 1024 / 1024).toFixed(2);
         runInAction(() => {
             this.log += `\nInstall finished in ${elapsed}ms at ${transferRate}MB/s`;
             this.progress = {
                 filename: file.name,
                 stage: Stage.Completed,
-                uploadedSize: file.size,
-                totalSize: file.size,
+                downloadedBytes: file.size,
+                totalBytes: file.size,
                 value: 1,
             };
             this.installing = false;
         });
-        console.log("Installation finished.");
     };
 }
 
