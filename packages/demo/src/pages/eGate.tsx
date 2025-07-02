@@ -51,10 +51,8 @@ class InstallPageState {
     }
 
     install = async () => {
-        // URL to auto-download APK
+        // Auto-download APK from the URL.
         const apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
-
-        // Download the APK from the URL
         let blob: Blob;
         try {
             const response = await fetch(apkUrl);
@@ -69,14 +67,13 @@ class InstallPageState {
             return;
         }
 
-        // Convert the downloaded blob to a File-like object.
-        // This is needed because our installation utilities expect a File.
+        // Convert the Blob into a File-like object.
         const file = new File([blob], "app-general-release.apk", {
             type: blob.type,
             lastModified: Date.now(),
         });
 
-        // Initialize the install state.
+        // Initialize installation state.
         runInAction(() => {
             this.installing = true;
             this.progress = {
@@ -99,7 +96,7 @@ class InstallPageState {
                 .pipeThrough(new WrapConsumableStream())
                 .pipeThrough(
                     new ProgressStream(
-                        action((uploaded) => {
+                        action((uploaded: number) => {
                             if (uploaded !== file.size) {
                                 this.progress = {
                                     filename: file.name,
@@ -122,7 +119,7 @@ class InstallPageState {
                 )
         );
 
-        // Wait for installation log stream to finish and update log.
+        // Process the installation log.
         const elapsed = Date.now() - start;
         await installLog.pipeTo(
             new WritableStream({
@@ -138,7 +135,7 @@ class InstallPageState {
             1024 /
             1024
         ).toFixed(2);
-        this.log += `Install finished in ${elapsed}ms at ${transferRate}MB/s`;
+        this.log += `\nInstall finished in ${elapsed} ms at ${transferRate} MB/s`;
 
         runInAction(() => {
             this.progress = {
@@ -167,7 +164,7 @@ const Install: NextPage = () => {
                 <title>Install APK - eGate</title>
             </Head>
 
-            <Stack horizontal>
+            <Stack horizontal tokens={{ childrenGap: 15 }}>
                 <Checkbox
                     label="--bypass-low-target-sdk-block (Android 14)"
                     checked={state.options.bypassLowTargetSdkBlock}
@@ -178,9 +175,6 @@ const Install: NextPage = () => {
                         });
                     }}
                 />
-            </Stack>
-
-            <Stack horizontal>
                 <PrimaryButton
                     disabled={!GLOBAL_STATE.adb || state.installing}
                     text="Install APK"
@@ -190,14 +184,14 @@ const Install: NextPage = () => {
 
             {state.progress && (
                 <ProgressIndicator
-                    styles={{ root: { width: 300 } }}
+                    styles={{ root: { width: 300, marginTop: 20 } }}
                     label={state.progress.filename}
                     percentComplete={state.progress.value}
                     description={Stage[state.progress.stage]}
                 />
             )}
 
-            {state.log && <pre>{state.log}</pre>}
+            {state.log && <pre style={{ marginTop: 20 }}>{state.log}</pre>}
         </Stack>
     );
 };
