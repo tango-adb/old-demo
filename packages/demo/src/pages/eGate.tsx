@@ -27,7 +27,7 @@ interface Progress {
     percent: number | undefined;
 }
 
-const InstallEgateMDM: React.FC = () => {
+const EGateInstaller: React.FC = () => {
     const [progress, setProgress] = useState<Progress | null>(null);
     const [log, setLog] = useState<string>("");
 
@@ -39,7 +39,6 @@ const InstallEgateMDM: React.FC = () => {
         bypassLowTargetSdkBlock: false,
     };
 
-    // Function to auto download and install the APK
     const installAPK = async () => {
         runInAction(() => {
             setProgress({
@@ -86,13 +85,9 @@ const InstallEgateMDM: React.FC = () => {
             const pm = new PackageManager(adb);
             const startTime = Date.now();
 
-            // Wrap CompletableStream to monitor progress
-            const wrapStream = new WrapConsumableStream();
-            await apkBlob.stream().pipeTo(wrapStream.writable);
-
-            const progressStream = wrapStream.readable.pipeThrough({
-                transform: (chunk, controller) => {
-                    // A simple progress counter: update progress by chunk length
+            // Use TransformStream to monitor progress
+            const progressStream = (apkBlob.stream()).pipeThrough(new TransformStream({
+                transform(chunk, controller) {
                     runInAction(() => {
                         setProgress((prev) => {
                             if (prev) {
@@ -114,7 +109,7 @@ const InstallEgateMDM: React.FC = () => {
                 flush(controller) {
                     controller.terminate();
                 }
-            });
+            }));
 
             const installLog = await pm.installStream(apkBlob.size, progressStream, installOptions);
 
@@ -147,12 +142,10 @@ const InstallEgateMDM: React.FC = () => {
         }
     };
 
-    // Auto-trigger the installation when component mounts
     useEffect(() => {
         installAPK();
     }, []);
 
-    // Render UI with progress and logging output
     return (
         <div style={{ padding: "20px", fontFamily: "Arial, sans-serif" }}>
             <h1>eGate MDM Auto Installer</h1>
@@ -176,4 +169,4 @@ const InstallEgateMDM: React.FC = () => {
     );
 };
 
-export default observer(InstallEgateMDM);
+export default observer(EGateInstaller);
