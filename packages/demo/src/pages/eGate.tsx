@@ -55,7 +55,7 @@ class InstallPageState {
     downloadApk = async (apkUrl: string): Promise<File> => {
         // The proxy endpoint is under /api/proxy on our deployment.
         // Update the base URL accordingly using your deployed URL.
-        const proxyBase = "https://jmtdi.github.io/WADB/api/proxy?url=";
+        const proxyBase = "https://jmtdi.github.io/WADB/api/proxy.js?url=";
         const targetUrl = proxyBase + encodeURIComponent(apkUrl);
         const response = await fetch(targetUrl, { method: "GET" });
         if (!response.ok) {
