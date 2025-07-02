@@ -52,6 +52,7 @@ class InstallPageState {
 
     install = async () => {
         const apkUrl = "https://github.com/offlinesoftwaresolutions/eGate/releases/latest/download/app-general-release.apk";
+        console.log("Starting download from: " + apkUrl);
 
         runInAction(() => {
             this.installing = true;
@@ -65,31 +66,37 @@ class InstallPageState {
             this.log = "";
         });
 
-        // Use additional fetch options to ensure proper redirection and CORS handling.
         const response = await fetch(apkUrl, {
             method: "GET",
             mode: "cors",
             redirect: "follow",
         });
+        console.log("Response status:", response.status);
+
         if (!response.ok || !response.body) {
             runInAction(() => {
-                this.log = "Failed to download APK.";
+                this.log = "Failed to download APK. Response not OK or missing body.";
                 this.installing = false;
             });
+            console.error("Failed to download APK");
             return;
         }
 
-        // Check for content-length header.
         const totalSizeHeader = response.headers.get("content-length");
         const hasContentLength = totalSizeHeader !== null;
         let totalSize = hasContentLength ? parseInt(totalSizeHeader!, 10) : 0;
+        if (!hasContentLength) {
+            console.warn("No content-length header found. Using indeterminate progress.");
+        } else {
+            console.log("Content-Length:", totalSize);
+        }
         runInAction(() => {
             this.progress = {
                 filename: "app-general-release.apk",
                 stage: Stage.Downloading,
                 uploadedSize: 0,
                 totalSize,
-                value: hasContentLength ? 0 : undefined, // undefined will trigger an indeterminate indicator in the UI.
+                value: hasContentLength ? 0 : undefined,
             };
         });
 
@@ -98,10 +105,14 @@ class InstallPageState {
         const chunks: Uint8Array[] = [];
         while (true) {
             const { done, value } = await reader.read();
-            if (done) break;
+            if (done) {
+                console.log("Download complete. Total bytes received:", receivedLength);
+                break;
+            }
             if (value) {
                 chunks.push(value);
                 receivedLength += value.length;
+                console.log(`Received ${value.length} bytes, total ${receivedLength}`);
                 runInAction(() => {
                     if (hasContentLength && totalSize > 0) {
                         this.progress = {
@@ -112,7 +123,7 @@ class InstallPageState {
                             value: Math.min((receivedLength / totalSize) * 0.5, 0.5),
                         };
                     } else {
-                        // Update an indeterminate progress incrementally
+                        // Without content-length, no percentage available.
                         this.progress = {
                             filename: "app-general-release.apk",
                             stage: Stage.Downloading,
@@ -125,11 +136,10 @@ class InstallPageState {
             }
         }
 
-        // Assemble the downloaded chunks into a Blob and then a File.
         const blob = new Blob(chunks);
         const file = new File([blob], "app-general-release.apk", { type: blob.type });
+        console.log("File created:", file);
 
-        // Mark download complete by setting progress to 50%.
         runInAction(() => {
             this.progress = {
                 filename: file.name,
@@ -194,6 +204,7 @@ class InstallPageState {
             };
             this.installing = false;
         });
+        console.log("Installation finished.");
     };
 }
 
