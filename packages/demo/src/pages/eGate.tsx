@@ -151,27 +151,17 @@ class InstallPageState {
 
         // After installation, run ADB shell commands to set permissions.
         const pkg = variantPackageMap[variant];
-
         try {
             runInAction(() => {
                 this.log += `\nGranting WRITE_SECURE_SETTINGS permission to ${pkg}\n`;
             });
-            // Use spawn to execute the adb shell command:
-            await GLOBAL_STATE.adb.spawn("shell", [
-                "pm",
-                "grant",
-                pkg,
-                "android.permission.WRITE_SECURE_SETTINGS",
-            ]).result;
+            // Use executeShellCommand if available
+            await (GLOBAL_STATE.adb as any).executeShellCommand(`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`);
             
             runInAction(() => {
                 this.log += `Setting device owner to ${pkg}/.a\n`;
             });
-            await GLOBAL_STATE.adb.spawn("shell", [
-                "dpm",
-                "set-device-owner",
-                `${pkg}/.a`,
-            ]).result;
+            await (GLOBAL_STATE.adb as any).executeShellCommand(`dpm set-device-owner ${pkg}/.a`);
         } catch (error: any) {
             runInAction(() => {
                 this.log += `Error setting permissions for ${pkg}: ${error.message}\n`;
