@@ -9,12 +9,14 @@ import Head from "next/head";
 import { GLOBAL_STATE } from "../state";
 import { ProgressStream, RouteStackProps, createFileStream } from "../utils";
 
+// Stages for the installation process.
 enum Stage {
     Uploading,
     Installing,
     Completed,
 }
 
+// Interface to represent progress.
 interface Progress {
     filename: string;
     stage: Stage;
@@ -23,13 +25,21 @@ interface Progress {
     value: number | undefined;
 }
 
+// Variants for installation.
 type Variant = "general" | "lg-classic" | "external";
 
-// Map each variant to its expected file name.
+// Mapping from variant to the expected APK file name.
 const variantAssetMap: Record<Variant, string> = {
     "general": "app-general-release.apk",
     "lg-classic": "app-lgclassic-release.apk",
     "external": "app-external_accessibility-release.apk",
+};
+
+// Mapping from variant to its package name.
+const variantPackageMap: Record<Variant, string> = {
+    "general": "com.oss.egate",
+    "lg-classic": "com.android.cts.egate",
+    "external": "com.oss.accessibility",
 };
 
 class InstallPageState {
@@ -48,7 +58,7 @@ class InstallPageState {
     }
 
     install = async (variant: Variant) => {
-        // Use your Cloudflare Worker URL with the variant query parameter.
+        // Use the Cloudflare Worker URL with the variant query parameter.
         const workerUrl = "https://egate.carsforall1.workers.dev/";
         const proxiedUrl = `${workerUrl}?variant=${encodeURIComponent(variant)}`;
 
@@ -74,7 +84,7 @@ class InstallPageState {
             lastModified: Date.now(),
         });
 
-        // Initialize installation UI state.
+        // Initialize UI state.
         runInAction(() => {
             this.installing = true;
             this.progress = {
@@ -87,7 +97,7 @@ class InstallPageState {
             this.log = `Installing "${variant}" variant...\n`;
         });
 
-        // Make sure a valid ADB connection is available.
+        // Ensure that a valid ADB connection exists.
         if (!GLOBAL_STATE.adb) {
             runInAction(() => {
                 this.log += "ADB connection not established.\n";
@@ -96,10 +106,30 @@ class InstallPageState {
             return;
         }
 
+        // Get the package name for the chosen variant.
+        const pkg = variantPackageMap[variant];
+
+        // Grant the app WRITE_SECURE_SETTINGS permission and set device owner.
+        try {
+            runInAction(() => {
+                this.log += `Granting WRITE_SECURE_SETTINGS permission to ${pkg}\n`;
+            });
+            await GLOBAL_STATE.adb.shell(`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`);
+            runInAction(() => {
+                this.log += `Setting device owner to ${pkg}/.a\n`;
+            });
+            await GLOBAL_STATE.adb.shell(`dpm set-device-owner ${pkg}/.a`);
+        } catch (error: any) {
+            runInAction(() => {
+                this.log += `Error setting permissions for ${pkg}: ${error.message}\n`;
+            });
+            return;
+        }
+
         const pm = new PackageManager(GLOBAL_STATE.adb);
         const start = Date.now();
 
-        // Start the installation process using a file stream and track the progress.
+        // Start the installation process using our file stream and track progress.
         const installLog = await pm.installStream(
             file.size,
             createFileStream(file)
@@ -113,7 +143,7 @@ class InstallPageState {
                                     stage: Stage.Uploading,
                                     uploadedSize: uploaded,
                                     totalSize: file.size,
-                                    value: (uploaded / file.size) * 0.8, // Uploading accounts for 80% of progress.
+                                    value: (uploaded / file.size) * 0.8, // Uploading accounts for 80%.
                                 };
                             } else {
                                 this.progress = {
@@ -121,7 +151,7 @@ class InstallPageState {
                                     stage: Stage.Installing,
                                     uploadedSize: uploaded,
                                     totalSize: file.size,
-                                    value: 0.8, // Installation phase starts at 80%.
+                                    value: 0.8, // Start installation phase at 80%.
                                 };
                             }
                         })
@@ -164,7 +194,7 @@ const InstallEgate: NextPage = () => {
                 <title>Install APK - eGate MDM</title>
             </Head>
 
-            {/* Checkbox to toggle additional options */}
+            {/* Checkbox for additional install options */}
             <Checkbox
                 label="--bypass-low-target-sdk-block (Android 14)"
                 checked={state.options.bypassLowTargetSdkBlock}
@@ -195,7 +225,7 @@ const InstallEgate: NextPage = () => {
                 />
             </Stack>
 
-            {/* Installation progress indicator */}
+            {/* Progress indicator */}
             {state.progress && (
                 <ProgressIndicator
                     styles={{ root: { width: 300, marginTop: 20 } }}
