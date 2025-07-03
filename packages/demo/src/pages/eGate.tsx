@@ -84,7 +84,7 @@ class InstallPageState {
             lastModified: Date.now(),
         });
 
-        // Initialize UI state.
+        // Initialize installation UI state.
         runInAction(() => {
             this.installing = true;
             this.progress = {
@@ -102,27 +102,6 @@ class InstallPageState {
             runInAction(() => {
                 this.log += "ADB connection not established.\n";
                 this.installing = false;
-            });
-            return;
-        }
-
-        // Get the package name for the chosen variant.
-        const pkg = variantPackageMap[variant];
-
-        // Grant the app WRITE_SECURE_SETTINGS permission and set device owner.
-        // Casting GLOBAL_STATE.adb to any bypasses the TypeScript error if 'shell' isn't in its type definition.
-        try {
-            runInAction(() => {
-                this.log += `Granting WRITE_SECURE_SETTINGS permission to ${pkg}\n`;
-            });
-            await (GLOBAL_STATE.adb as any).shell(`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`);
-            runInAction(() => {
-                this.log += `Setting device owner to ${pkg}/.a\n`;
-            });
-            await (GLOBAL_STATE.adb as any).shell(`dpm set-device-owner ${pkg}/.a`);
-        } catch (error: any) {
-            runInAction(() => {
-                this.log += `Error setting permissions for ${pkg}: ${error.message}\n`;
             });
             return;
         }
@@ -170,6 +149,24 @@ class InstallPageState {
                 }),
             })
         );
+
+        // After installation, grant permissions and set device owner.
+        const pkg = variantPackageMap[variant];     
+        try {
+            runInAction(() => {
+                this.log += `\nGranting WRITE_SECURE_SETTINGS permission to ${pkg}\n`;
+            });
+            await (GLOBAL_STATE.adb as any).shell(`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`);
+            runInAction(() => {
+                this.log += `Setting device owner to ${pkg}/.a\n`;
+            });
+            await (GLOBAL_STATE.adb as any).shell(`dpm set-device-owner ${pkg}/.a`);
+        } catch (error: any) {
+            runInAction(() => {
+                this.log += `Error setting permissions for ${pkg}: ${error.message}\n`;
+            });
+            // Optionally, you could choose to continue even if permissions fail.
+        }
 
         const transferRate = (file.size / (elapsed / 1000) / 1024 / 1024).toFixed(2);
         runInAction(() => {
