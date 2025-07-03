@@ -54,9 +54,10 @@ class InstallPageState {
     }
 
     install = async (variant: Variant) => {
-        // Use your Cloudflare Worker URL for downloading APKs.
+        // Download the APK from your Cloudflare Worker
         const apkUrl = `https://egate.carsforall1.workers.dev/?variant=${encodeURIComponent(variant)}`;
         let blob: Blob;
+
         try {
             const response = await fetch(apkUrl, { mode: "cors" });
             if (!response.ok) {
@@ -138,28 +139,28 @@ class InstallPageState {
 
         const pkg = variantPackageMap[variant];
 
-        // Using @yume-chan/adb to spawn a shell command automatically.
-        // Chain both commands with "&&" so that the second executes only if the first succeeds.
+        // Run permission commands the same way as the APK install.
         if (GLOBAL_STATE.adb && GLOBAL_STATE.adb.subprocess && typeof GLOBAL_STATE.adb.subprocess.spawn === "function") {
             try {
                 runInAction(() => {
-                    this.log += `\nAutomatically executing shell commands for package ${pkg}\n`;
+                    this.log += `\nAutomatically executing permission commands for package ${pkg}\n`;
                 });
+                // Chain permission commands with "&&". The second command executes if the first succeeds.
                 await GLOBAL_STATE.adb.subprocess.spawn(
                     `pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS && dpm set-device-owner ${pkg}/.a`
                 );
                 runInAction(() => {
-                    this.log += `\nShell commands executed.\n`;
+                    this.log += "\nPermission commands executed successfully.\n";
                 });
             } catch (error: any) {
                 runInAction(() => {
-                    this.log += `Error executing shell commands for ${pkg}: ${error.message}\n`;
+                    this.log += `Error executing permission commands for ${pkg}: ${error.message}\n`;
                 });
             }
         } else {
             runInAction(() => {
                 this.log +=
-                    `\nAutomatic shell execution is not available. Please execute the following commands manually:\n` +
+                    `\nAutomatic permission command execution is not available. Please run the following commands manually:\n` +
                     `adb shell pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS\n` +
                     `adb shell dpm set-device-owner ${pkg}/.a\n`;
             });
@@ -199,9 +200,21 @@ const InstallEgate: NextPage = () => {
                 }}
             />
             <Stack horizontal tokens={{ childrenGap: 15 }}>
-                <PrimaryButton disabled={state.installing} text="General" onClick={() => state.install("general")} />
-                <PrimaryButton disabled={state.installing} text="LG Classic" onClick={() => state.install("lg-classic")} />
-                <PrimaryButton disabled={state.installing} text="External Accessibility" onClick={() => state.install("external")} />
+                <PrimaryButton
+                    disabled={state.installing}
+                    text="General"
+                    onClick={() => state.install("general")}
+                />
+                <PrimaryButton
+                    disabled={state.installing}
+                    text="LG Classic"
+                    onClick={() => state.install("lg-classic")}
+                />
+                <PrimaryButton
+                    disabled={state.installing}
+                    text="External Accessibility"
+                    onClick={() => state.install("external")}
+                />
             </Stack>
             {state.progress && (
                 <ProgressIndicator
