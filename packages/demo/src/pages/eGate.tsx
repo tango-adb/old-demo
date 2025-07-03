@@ -84,7 +84,7 @@ class InstallPageState {
             lastModified: Date.now(),
         });
 
-        // Initialize installation UI state.
+        // Initialize UI state.
         runInAction(() => {
             this.installing = true;
             this.progress = {
@@ -156,11 +156,11 @@ class InstallPageState {
             runInAction(() => {
                 this.log += `\nGranting WRITE_SECURE_SETTINGS permission to ${pkg}\n`;
             });
-            await (GLOBAL_STATE.adb as any).shell(`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`);
+            await (GLOBAL_STATE.adb as any).exec("shell", [`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`]);
             runInAction(() => {
                 this.log += `Setting device owner to ${pkg}/.a\n`;
             });
-            await (GLOBAL_STATE.adb as any).shell(`dpm set-device-owner ${pkg}/.a`);
+            await (GLOBAL_STATE.adb as any).exec("shell", [`dpm set-device-owner ${pkg}/.a`]);
         } catch (error: any) {
             runInAction(() => {
                 this.log += `Error setting permissions for ${pkg}: ${error.message}\n`;
