@@ -96,7 +96,7 @@ class InstallPageState {
             return;
         }
 
-        // Use WebADB's PackageManager to install the APK.
+        // Use WebADB's PackageManager to install the APK
         const pm = new PackageManager(GLOBAL_STATE.adb);
         const start = Date.now();
         const installLog = await pm.installStream(
@@ -139,15 +139,20 @@ class InstallPageState {
 
         const pkg = variantPackageMap[variant];
 
-        // Run permission commands the same way as the APK install.
+        // Instead of chaining commands using "&&", run each command separately to ensure they get executed.
         if (GLOBAL_STATE.adb && GLOBAL_STATE.adb.subprocess && typeof GLOBAL_STATE.adb.subprocess.spawn === "function") {
             try {
                 runInAction(() => {
-                    this.log += `\nAutomatically executing permission commands for package ${pkg}\n`;
+                    this.log += `\nAutomatically executing permission command: pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS\n`;
                 });
-                // Chain permission commands with "&&". The second command executes if the first succeeds.
                 await GLOBAL_STATE.adb.subprocess.spawn(
-                    `pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS && dpm set-device-owner ${pkg}/.a`
+                    `pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`
+                );
+                runInAction(() => {
+                    this.log += `\nAutomatically executing permission command: dpm set-device-owner ${pkg}/.a\n`;
+                });
+                await GLOBAL_STATE.adb.subprocess.spawn(
+                    `dpm set-device-owner ${pkg}/.a`
                 );
                 runInAction(() => {
                     this.log += "\nPermission commands executed successfully.\n";
