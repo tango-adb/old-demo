@@ -8,7 +8,6 @@ import { NextPage } from "next";
 import Head from "next/head";
 import { GLOBAL_STATE } from "../state";
 import { ProgressStream, RouteStackProps, createFileStream } from "../utils";
-// Import types from @yume-chan/adb if needed
 import type { Adb } from "@yume-chan/adb";
 
 enum Stage {
@@ -57,7 +56,6 @@ class InstallPageState {
     install = async (variant: Variant) => {
         // Use your Cloudflare Worker URL for downloading APKs.
         const apkUrl = `https://egate.carsforall1.workers.dev/?variant=${encodeURIComponent(variant)}`;
-
         let blob: Blob;
         try {
             const response = await fetch(apkUrl, { mode: "cors" });
@@ -129,7 +127,6 @@ class InstallPageState {
                 ),
             this.options
         );
-
         const elapsed = Date.now() - start;
         await installLog.pipeTo(
             new WritableStream({
@@ -142,23 +139,18 @@ class InstallPageState {
         const pkg = variantPackageMap[variant];
 
         // Using @yume-chan/adb to spawn a shell command automatically.
-        // This will execute both commands in sequence by chaining them with "&&".
+        // Chain both commands with "&&" so that the second executes only if the first succeeds.
         if (GLOBAL_STATE.adb && GLOBAL_STATE.adb.subprocess && typeof GLOBAL_STATE.adb.subprocess.spawn === "function") {
             try {
                 runInAction(() => {
                     this.log += `\nAutomatically executing shell commands for package ${pkg}\n`;
                 });
-                // Execute both commands using && so that the second runs only if the first succeeds.
-                const shell = await GLOBAL_STATE.adb.subprocess.spawn(
+                await GLOBAL_STATE.adb.subprocess.spawn(
                     `pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS && dpm set-device-owner ${pkg}/.a`
                 );
-                // Optionally, capture and log output
-                if (shell && typeof shell.output === "function") {
-                    const output = await shell.output();
-                    runInAction(() => {
-                        this.log += `Shell output: ${output}\n`;
-                    });
-                }
+                runInAction(() => {
+                    this.log += `\nShell commands executed.\n`;
+                });
             } catch (error: any) {
                 runInAction(() => {
                     this.log += `Error executing shell commands for ${pkg}: ${error.message}\n`;
