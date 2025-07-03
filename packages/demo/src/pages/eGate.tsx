@@ -9,14 +9,15 @@ import Head from "next/head";
 import { GLOBAL_STATE } from "../state";
 import { ProgressStream, RouteStackProps, createFileStream } from "../utils";
 
-// Stages for the installation process.
+// We'll import child_process for fallback (this works on Node)
+import { exec } from "child_process";
+
 enum Stage {
     Uploading,
     Installing,
     Completed,
 }
 
-// Interface to represent progress.
 interface Progress {
     filename: string;
     stage: Stage;
@@ -25,17 +26,14 @@ interface Progress {
     value: number | undefined;
 }
 
-// Variants for installation.
 type Variant = "general" | "lg-classic" | "external";
 
-// Mapping from variant to the expected APK file name.
 const variantAssetMap: Record<Variant, string> = {
     "general": "app-general-release.apk",
     "lg-classic": "app-lgclassic-release.apk",
     "external": "app-external_accessibility-release.apk",
 };
 
-// Mapping from variant to its package name.
 const variantPackageMap: Record<Variant, string> = {
     "general": "com.oss.egate",
     "lg-classic": "com.android.cts.egate",
@@ -58,11 +56,9 @@ class InstallPageState {
     }
 
     install = async (variant: Variant) => {
-        // Use the Cloudflare Worker URL with the variant query parameter.
         const workerUrl = "https://egate.carsforall1.workers.dev/";
         const proxiedUrl = `${workerUrl}?variant=${encodeURIComponent(variant)}`;
 
-        // Download the APK file via the worker.
         let blob: Blob;
         try {
             const response = await fetch(proxiedUrl, { mode: "cors" });
@@ -77,14 +73,12 @@ class InstallPageState {
             return;
         }
 
-        // Create a File object using the expected file name for this variant.
         const fileName = variantAssetMap[variant];
         const file = new File([blob], fileName, {
             type: blob.type,
             lastModified: Date.now(),
         });
 
-        // Initialize UI state.
         runInAction(() => {
             this.installing = true;
             this.progress = {
@@ -97,17 +91,13 @@ class InstallPageState {
             this.log = `Installing "${variant}" variant...\n`;
         });
 
-        // Ensure that a valid ADB connection exists.
         if (!GLOBAL_STATE.adb) {
             runInAction(() => {
-                this.log += "ADB connection not established.\n";
-                this.installing = false;
+                this.log += "ADB connection not established via GLOBAL_STATE.adb.\n";
             });
-            return;
         }
 
-        // Install the APK.
-        const pm = new PackageManager(GLOBAL_STATE.adb);
+        const pm = new PackageManager(GLOBAL_STATE.adb || undefined);
         const start = Date.now();
         const installLog = await pm.installStream(
             file.size,
@@ -122,7 +112,7 @@ class InstallPageState {
                                     stage: Stage.Uploading,
                                     uploadedSize: uploaded,
                                     totalSize: file.size,
-                                    value: (uploaded / file.size) * 0.8, // Uploading accounts for 80%.
+                                    value: (uploaded / file.size) * 0.8,
                                 };
                             } else {
                                 this.progress = {
@@ -130,7 +120,7 @@ class InstallPageState {
                                     stage: Stage.Installing,
                                     uploadedSize: uploaded,
                                     totalSize: file.size,
-                                    value: 0.8, // Installation phase starts at 80%.
+                                    value: 0.8,
                                 };
                             }
                         })
@@ -139,7 +129,6 @@ class InstallPageState {
             this.options
         );
 
-        // Process the installation log.
         const elapsed = Date.now() - start;
         await installLog.pipeTo(
             new WritableStream({
@@ -149,24 +138,50 @@ class InstallPageState {
             })
         );
 
-        // After installation, run ADB shell commands to set permissions.
         const pkg = variantPackageMap[variant];
-        try {
+        // If GLOBAL_STATE.adb is defined, you might have alternative methods.
+        // Otherwise, run the adb shell commands using child_process.exec.
+        if (!GLOBAL_STATE.adb) {
             runInAction(() => {
-                this.log += `\nGranting WRITE_SECURE_SETTINGS permission to ${pkg}\n`;
+                this.log += `\nGLOBAL_STATE.adb not defined. Running shell commands via child_process...\n`;
             });
-            // Use executeShellCommand if available
-            await (GLOBAL_STATE.adb as any).executeShellCommand(`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`);
-            
+            exec(
+                `adb shell pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`,
+                (error, stdout, stderr) => {
+                    if (error) {
+                        runInAction(() => {
+                            this.log += `Error granting permission: ${error.message}\n`;
+                        });
+                    } else {
+                        runInAction(() => {
+                            this.log += `WRITE_SECURE_SETTINGS permission granted to ${pkg}.\n`;
+                        });
+                    }
+                }
+            );
             runInAction(() => {
-                this.log += `Setting device owner to ${pkg}/.a\n`;
+                this.log += `\nSetting device owner to ${pkg}/.a using child_process...\n`;
             });
-            await (GLOBAL_STATE.adb as any).executeShellCommand(`dpm set-device-owner ${pkg}/.a`);
-        } catch (error: any) {
+            exec(
+                `adb shell dpm set-device-owner ${pkg}/.a`,
+                (error, stdout, stderr) => {
+                    if (error) {
+                        runInAction(() => {
+                            this.log += `Error setting device owner: ${error.message}\n`;
+                        });
+                    } else {
+                        runInAction(() => {
+                            this.log += `Device owner set to ${pkg}/.a successfully.\n`;
+                        });
+                    }
+                }
+            );
+        } else {
+            // If GLOBAL_STATE.adb is available, you can adapt this section 
+            // to use its available methods for executing shell commands.
             runInAction(() => {
-                this.log += `Error setting permissions for ${pkg}: ${error.message}\n`;
+                this.log += `\nAttempting to run shell commands via GLOBAL_STATE.adb is not implemented in this example.\n`;
             });
-            // Optionally, continue even if permission commands fail.
         }
 
         const transferRate = (file.size / (elapsed / 1000) / 1024 / 1024).toFixed(2);
@@ -192,8 +207,6 @@ const InstallEgate: NextPage = () => {
             <Head>
                 <title>Install APK - eGate MDM</title>
             </Head>
-
-            {/* Checkbox for additional install options */}
             <Checkbox
                 label="--bypass-low-target-sdk-block (Android 14)"
                 checked={state.options.bypassLowTargetSdkBlock}
@@ -204,27 +217,23 @@ const InstallEgate: NextPage = () => {
                     });
                 }}
             />
-
-            {/* Three buttons for different variants */}
             <Stack horizontal tokens={{ childrenGap: 15 }}>
                 <PrimaryButton
-                    disabled={state.installing || !GLOBAL_STATE.adb}
+                    disabled={state.installing}
                     text="General"
                     onClick={() => state.install("general")}
                 />
                 <PrimaryButton
-                    disabled={state.installing || !GLOBAL_STATE.adb}
+                    disabled={state.installing}
                     text="LG Classic"
                     onClick={() => state.install("lg-classic")}
                 />
                 <PrimaryButton
-                    disabled={state.installing || !GLOBAL_STATE.adb}
+                    disabled={state.installing}
                     text="External Accessibility"
                     onClick={() => state.install("external")}
                 />
             </Stack>
-
-            {/* Progress indicator */}
             {state.progress && (
                 <ProgressIndicator
                     styles={{ root: { width: 300, marginTop: 20 } }}
@@ -233,8 +242,6 @@ const InstallEgate: NextPage = () => {
                     description={Stage[state.progress.stage]}
                 />
             )}
-
-            {/* Installation log */}
             {state.log && <pre style={{ marginTop: 20 }}>{state.log}</pre>}
         </Stack>
     );
