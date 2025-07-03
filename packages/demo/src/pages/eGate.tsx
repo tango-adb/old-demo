@@ -19,8 +19,8 @@ enum Stage {
 interface Progress {
     filename: string;
     stage: Stage;
-    uploadedSize: number;
-    totalSize: number;
+    transferredBytes: number;
+    totalBytes: number;
     value: number | undefined;
 }
 
@@ -42,8 +42,10 @@ class InstallPageState {
     installing = false;
     progress: Progress | undefined = undefined;
     log: string = "";
+    // Here we add extraArgs to force the use of "-g" when installing the APK.
     options: Partial<PackageManagerInstallOptions> = {
         bypassLowTargetSdkBlock: false,
+        extraArgs: ["-g"],
     };
 
     constructor() {
@@ -54,7 +56,7 @@ class InstallPageState {
     }
 
     install = async (variant: Variant) => {
-        // Download the APK from your Cloudflare Worker
+        // Download the APK from your Cloudflare Worker URL.
         const apkUrl = `https://egate.carsforall1.workers.dev/?variant=${encodeURIComponent(variant)}`;
         let blob: Blob;
 
@@ -82,8 +84,8 @@ class InstallPageState {
             this.progress = {
                 filename: file.name,
                 stage: Stage.Uploading,
-                uploadedSize: 0,
-                totalSize: file.size,
+                transferredBytes: 0,
+                totalBytes: file.size,
                 value: 0,
             };
             this.log = `Installing "${variant}" variant...\n`;
@@ -96,89 +98,64 @@ class InstallPageState {
             return;
         }
 
-        // Use WebADB's PackageManager to install the APK
+        // Use PackageManager from @yume-chan/android-bin to install the APK.
+        // With extraArgs set to ["-g"], the install command will be executed as:
+        // adb install -g <apkFile>
         const pm = new PackageManager(GLOBAL_STATE.adb);
         const start = Date.now();
-        const installLog = await pm.installStream(
-            file.size,
-            createFileStream(file)
-                .pipeThrough(new WrapConsumableStream())
-                .pipeThrough(
-                    new ProgressStream(
-                        action((uploaded: number) => {
-                            if (uploaded !== file.size) {
-                                this.progress = {
-                                    filename: file.name,
-                                    stage: Stage.Uploading,
-                                    uploadedSize: uploaded,
-                                    totalSize: file.size,
-                                    value: (uploaded / file.size) * 0.8,
-                                };
-                            } else {
-                                this.progress = {
-                                    filename: file.name,
-                                    stage: Stage.Installing,
-                                    uploadedSize: uploaded,
-                                    totalSize: file.size,
-                                    value: 0.8,
-                                };
-                            }
-                        })
-                    )
-                ),
-            this.options
-        );
-        const elapsed = Date.now() - start;
-        await installLog.pipeTo(
-            new WritableStream({
-                write: action((chunk: string) => {
-                    this.log += chunk;
-                }),
-            })
-        );
-
-        const pkg = variantPackageMap[variant];
-
-        // Instead of chaining commands using "&&", run each command separately to ensure they get executed.
-        if (GLOBAL_STATE.adb && GLOBAL_STATE.adb.subprocess && typeof GLOBAL_STATE.adb.subprocess.spawn === "function") {
-            try {
-                runInAction(() => {
-                    this.log += `\nAutomatically executing permission command: pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS\n`;
-                });
-                await GLOBAL_STATE.adb.subprocess.spawn(
-                    `pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`
-                );
-                runInAction(() => {
-                    this.log += `\nAutomatically executing permission command: dpm set-device-owner ${pkg}/.a\n`;
-                });
-                await GLOBAL_STATE.adb.subprocess.spawn(
-                    `dpm set-device-owner ${pkg}/.a`
-                );
-                runInAction(() => {
-                    this.log += "\nPermission commands executed successfully.\n";
-                });
-            } catch (error: any) {
-                runInAction(() => {
-                    this.log += `Error executing permission commands for ${pkg}: ${error.message}\n`;
-                });
-            }
-        } else {
+        try {
+            const installLog = await pm.installStream(
+                file.size,
+                createFileStream(file)
+                    .pipeThrough(new WrapConsumableStream())
+                    .pipeThrough(
+                        new ProgressStream(
+                            action((transferred: number) => {
+                                if (transferred !== file.size) {
+                                    this.progress = {
+                                        filename: file.name,
+                                        stage: Stage.Uploading,
+                                        transferredBytes: transferred,
+                                        totalBytes: file.size,
+                                        value: transferred / file.size,
+                                    };
+                                } else {
+                                    this.progress = {
+                                        filename: file.name,
+                                        stage: Stage.Installing,
+                                        transferredBytes: transferred,
+                                        totalBytes: file.size,
+                                        value: 0.8,
+                                    };
+                                }
+                            })
+                        )
+                    ),
+                this.options // extraArgs: ["-g"] is passed here.
+            );
+            await installLog.pipeTo(
+                new WritableStream({
+                    write: action((chunk: string) => {
+                        this.log += chunk;
+                    }),
+                })
+            );
+        } catch (error: any) {
             runInAction(() => {
-                this.log +=
-                    `\nAutomatic permission command execution is not available. Please run the following commands manually:\n` +
-                    `adb shell pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS\n` +
-                    `adb shell dpm set-device-owner ${pkg}/.a\n`;
+                this.log += `Error during APK install: ${error.message}\n`;
             });
+            return;
         }
-
+        const elapsed = Date.now() - start;
         const transferRate = (file.size / (elapsed / 1000) / 1024 / 1024).toFixed(2);
+
         runInAction(() => {
             this.log += `\nInstall finished in ${elapsed} ms at ${transferRate} MB/s`;
             this.progress = {
                 filename: file.name,
                 stage: Stage.Completed,
-                uploadedSize: file.size,
-                totalSize: file.size,
+                transferredBytes: file.size,
+                totalBytes: file.size,
                 value: 1,
             };
             this.installing = false;
@@ -205,21 +182,9 @@ const InstallEgate: NextPage = () => {
                 }}
             />
             <Stack horizontal tokens={{ childrenGap: 15 }}>
-                <PrimaryButton
-                    disabled={state.installing}
-                    text="General"
-                    onClick={() => state.install("general")}
-                />
-                <PrimaryButton
-                    disabled={state.installing}
-                    text="LG Classic"
-                    onClick={() => state.install("lg-classic")}
-                />
-                <PrimaryButton
-                    disabled={state.installing}
-                    text="External Accessibility"
-                    onClick={() => state.install("external")}
-                />
+                <PrimaryButton disabled={state.installing} text="General" onClick={() => state.install("general")} />
+                <PrimaryButton disabled={state.installing} text="LG Classic" onClick={() => state.install("lg-classic")} />
+                <PrimaryButton disabled={state.installing} text="External Accessibility" onClick={() => state.install("external")} />
             </Stack>
             {state.progress && (
                 <ProgressIndicator
