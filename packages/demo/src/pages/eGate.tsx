@@ -149,34 +149,34 @@ class InstallPageState {
             })
         );
 
-        // After installation, grant permissions and set device owner.
+        // After installation, run ADB shell commands to set permissions.
         const pkg = variantPackageMap[variant];
+
         try {
             runInAction(() => {
                 this.log += `\nGranting WRITE_SECURE_SETTINGS permission to ${pkg}\n`;
             });
-            // Execute the permission grant command with separate args.
-            await (GLOBAL_STATE.adb as any).exec("shell", [
+            // Use spawn to execute the adb shell command:
+            await GLOBAL_STATE.adb.spawn("shell", [
                 "pm",
                 "grant",
                 pkg,
                 "android.permission.WRITE_SECURE_SETTINGS",
-            ]);
-
+            ]).result;
+            
             runInAction(() => {
                 this.log += `Setting device owner to ${pkg}/.a\n`;
             });
-            // Execute the device owner command with separate args.
-            await (GLOBAL_STATE.adb as any).exec("shell", [
+            await GLOBAL_STATE.adb.spawn("shell", [
                 "dpm",
                 "set-device-owner",
                 `${pkg}/.a`,
-            ]);
+            ]).result;
         } catch (error: any) {
             runInAction(() => {
                 this.log += `Error setting permissions for ${pkg}: ${error.message}\n`;
             });
-            // Optionally, you can choose to continue even if permission commands fail.
+            // Optionally, continue even if permission commands fail.
         }
 
         const transferRate = (file.size / (elapsed / 1000) / 1024 / 1024).toFixed(2);
