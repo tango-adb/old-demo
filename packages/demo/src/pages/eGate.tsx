@@ -9,13 +9,6 @@ import Head from "next/head";
 import { GLOBAL_STATE } from "../state";
 import { ProgressStream, RouteStackProps, createFileStream } from "../utils";
 
-// Conditionally require child_process in Node environments only.
-let exec: any = null;
-if (typeof window === "undefined") {
-    // We are in a Node.js environment.
-    exec = require("child_process").exec;
-}
-
 enum Stage {
     Uploading,
     Installing,
@@ -60,12 +53,12 @@ class InstallPageState {
     }
 
     install = async (variant: Variant) => {
-        const workerUrl = "https://egate.carsforall1.workers.dev/";
-        const proxiedUrl = `${workerUrl}?variant=${encodeURIComponent(variant)}`;
+        // Use your Cloudflare Worker URL for downloading APKs.
+        const apkUrl = `https://egate.carsforall1.workers.dev/?variant=${encodeURIComponent(variant)}`;
 
         let blob: Blob;
         try {
-            const response = await fetch(proxiedUrl, { mode: "cors" });
+            const response = await fetch(apkUrl, { mode: "cors" });
             if (!response.ok) {
                 throw new Error(`Failed to download APK: ${response.statusText}`);
             }
@@ -99,11 +92,10 @@ class InstallPageState {
             runInAction(() => {
                 this.log += "ADB connection not established via GLOBAL_STATE.adb.\n";
             });
-            // Fallback to command-line installation might be implemented here.
             return;
         }
 
-        // Use non-null assertion (!) since we've checked GLOBAL_STATE.adb is defined.
+        // Using WebADB connection.
         const pm = new PackageManager(GLOBAL_STATE.adb!);
         const start = Date.now();
         const installLog = await pm.installStream(
@@ -146,39 +138,29 @@ class InstallPageState {
         );
 
         const pkg = variantPackageMap[variant];
-        // Fallback: use child_process.exec for running adb shell commands if available
-        if (exec) {
-            runInAction(() => {
-                this.log += `\nRunning adb shell command: pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS\n`;
-            });
-            exec(`adb shell pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`, (error: Error, stdout: string, stderr: string) => {
-                if (error) {
-                    runInAction(() => {
-                        this.log += `Error granting permission: ${error.message}\n`;
-                    });
-                } else {
-                    runInAction(() => {
-                        this.log += `WRITE_SECURE_SETTINGS permission granted to ${pkg}.\n`;
-                    });
-                }
-            });
-            runInAction(() => {
-                this.log += `\nRunning adb shell command: dpm set-device-owner ${pkg}/.a\n`;
-            });
-            exec(`adb shell dpm set-device-owner ${pkg}/.a`, (error: Error, stdout: string, stderr: string) => {
-                if (error) {
-                    runInAction(() => {
-                        this.log += `Error setting device owner: ${error.message}\n`;
-                    });
-                } else {
-                    runInAction(() => {
-                        this.log += `Device owner set to ${pkg}/.a successfully.\n`;
-                    });
-                }
-            });
+
+        // For WebADB, try executing shell commands if the method exists.
+        if (typeof GLOBAL_STATE.adb.shell === "function") {
+            try {
+                runInAction(() => {
+                    this.log += `\nGranting WRITE_SECURE_SETTINGS permission via adb shell for ${pkg}\n`;
+                });
+                await GLOBAL_STATE.adb.shell(`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`);
+                runInAction(() => {
+                    this.log += `\nSetting device owner via adb shell for ${pkg}/.a\n`;
+                });
+                await GLOBAL_STATE.adb.shell(`dpm set-device-owner ${pkg}/.a`);
+            } catch (error: any) {
+                runInAction(() => {
+                    this.log += `Error running shell commands for ${pkg}: ${error.message}\n`;
+                });
+            }
         } else {
             runInAction(() => {
-                this.log += `\nchild_process.exec is not available. Please run adb shell commands manually.\n`;
+                this.log += `\nadshell method not available on your WebADB instance. Please run:\n` +
+                `adb shell pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS\n` +
+                `adb shell dpm set-device-owner ${pkg}/.a\n` +
+                `manually if needed.\n`;
             });
         }
 
