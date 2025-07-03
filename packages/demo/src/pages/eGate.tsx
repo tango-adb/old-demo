@@ -26,15 +26,15 @@ interface Progress {
 type Variant = "general" | "lg-classic" | "external";
 
 const variantAssetMap: Record<Variant, string> = {
-    "general": "app-general-release.apk",
+    general: "app-general-release.apk",
     "lg-classic": "app-lgclassic-release.apk",
-    "external": "app-external_accessibility-release.apk",
+    external: "app-external_accessibility-release.apk",
 };
 
 const variantPackageMap: Record<Variant, string> = {
-    "general": "com.oss.egate",
+    general: "com.oss.egate",
     "lg-classic": "com.android.cts.egate",
-    "external": "com.oss.accessibility",
+    external: "com.oss.accessibility",
 };
 
 class InstallPageState {
@@ -95,7 +95,7 @@ class InstallPageState {
             return;
         }
 
-        // Using WebADB connection.
+        // Using the WebADB connection.
         const pm = new PackageManager(GLOBAL_STATE.adb!);
         const start = Date.now();
         const installLog = await pm.installStream(
@@ -139,30 +139,29 @@ class InstallPageState {
 
         const pkg = variantPackageMap[variant];
 
-        // For WebADB, try executing shell commands if the method exists.
-        // Use a type cast to any to bypass TypeScript errors.
-        if (typeof (GLOBAL_STATE.adb as any).shell === "function") {
+        // Use the Tabby-based shell method if available.
+        // Here we assume that GLOBAL_STATE.adb exposes a property named "tabby" that provides an execute method.
+        if (GLOBAL_STATE.adb && (GLOBAL_STATE.adb as any).tabby && typeof (GLOBAL_STATE.adb as any).tabby.execute === "function") {
             try {
                 runInAction(() => {
-                    this.log += `\nGranting WRITE_SECURE_SETTINGS permission via adb shell for ${pkg}\n`;
+                    this.log += `\nGranting WRITE_SECURE_SETTINGS permission via Tabby shell for ${pkg}\n`;
                 });
-                await (GLOBAL_STATE.adb as any).shell(`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`);
+                await (GLOBAL_STATE.adb as any).tabby.execute(`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`);
                 runInAction(() => {
-                    this.log += `\nSetting device owner via adb shell for ${pkg}/.a\n`;
+                    this.log += `\nSetting device owner via Tabby shell for ${pkg}/.a\n`;
                 });
-                await (GLOBAL_STATE.adb as any).shell(`dpm set-device-owner ${pkg}/.a`);
+                await (GLOBAL_STATE.adb as any).tabby.execute(`dpm set-device-owner ${pkg}/.a`);
             } catch (error: any) {
                 runInAction(() => {
-                    this.log += `Error running shell commands for ${pkg}: ${error.message}\n`;
+                    this.log += `Error running Tabby shell commands for ${pkg}: ${error.message}\n`;
                 });
             }
         } else {
             runInAction(() => {
-                this.log += 
-                    `\nadshell method not available on your WebADB instance. Please run:\n` +
+                this.log +=
+                    `\nTabby shell is not available on your WebADB instance. Please run the following commands manually:\n` +
                     `adb shell pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS\n` +
-                    `adb shell dpm set-device-owner ${pkg}/.a\n` +
-                    `manually if needed.\n`;
+                    `adb shell dpm set-device-owner ${pkg}/.a\n`;
             });
         }
 
