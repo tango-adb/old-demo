@@ -8,6 +8,8 @@ import { NextPage } from "next";
 import Head from "next/head";
 import { GLOBAL_STATE } from "../state";
 import { ProgressStream, RouteStackProps, createFileStream } from "../utils";
+// Import types from @yume-chan/adb if needed
+import type { Adb } from "@yume-chan/adb";
 
 enum Stage {
     Uploading,
@@ -95,8 +97,8 @@ class InstallPageState {
             return;
         }
 
-        // Using the WebADB connection.
-        const pm = new PackageManager(GLOBAL_STATE.adb!);
+        // Use WebADB's PackageManager to install the APK.
+        const pm = new PackageManager(GLOBAL_STATE.adb);
         const start = Date.now();
         const installLog = await pm.installStream(
             file.size,
@@ -139,27 +141,33 @@ class InstallPageState {
 
         const pkg = variantPackageMap[variant];
 
-        // Use the Tabby-based shell method if available.
-        // Here we assume that GLOBAL_STATE.adb exposes a property named "tabby" that provides an execute method.
-        if (GLOBAL_STATE.adb && (GLOBAL_STATE.adb as any).tabby && typeof (GLOBAL_STATE.adb as any).tabby.execute === "function") {
+        // Using @yume-chan/adb to spawn a shell command automatically.
+        // This will execute both commands in sequence by chaining them with "&&".
+        if (GLOBAL_STATE.adb && GLOBAL_STATE.adb.subprocess && typeof GLOBAL_STATE.adb.subprocess.spawn === "function") {
             try {
                 runInAction(() => {
-                    this.log += `\nGranting WRITE_SECURE_SETTINGS permission via Tabby shell for ${pkg}\n`;
+                    this.log += `\nAutomatically executing shell commands for package ${pkg}\n`;
                 });
-                await (GLOBAL_STATE.adb as any).tabby.execute(`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`);
-                runInAction(() => {
-                    this.log += `\nSetting device owner via Tabby shell for ${pkg}/.a\n`;
-                });
-                await (GLOBAL_STATE.adb as any).tabby.execute(`dpm set-device-owner ${pkg}/.a`);
+                // Execute both commands using && so that the second runs only if the first succeeds.
+                const shell = await GLOBAL_STATE.adb.subprocess.spawn(
+                    `pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS && dpm set-device-owner ${pkg}/.a`
+                );
+                // Optionally, capture and log output
+                if (shell && typeof shell.output === "function") {
+                    const output = await shell.output();
+                    runInAction(() => {
+                        this.log += `Shell output: ${output}\n`;
+                    });
+                }
             } catch (error: any) {
                 runInAction(() => {
-                    this.log += `Error running Tabby shell commands for ${pkg}: ${error.message}\n`;
+                    this.log += `Error executing shell commands for ${pkg}: ${error.message}\n`;
                 });
             }
         } else {
             runInAction(() => {
                 this.log +=
-                    `\nTabby shell is not available on your WebADB instance. Please run the following commands manually:\n` +
+                    `\nAutomatic shell execution is not available. Please execute the following commands manually:\n` +
                     `adb shell pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS\n` +
                     `adb shell dpm set-device-owner ${pkg}/.a\n`;
             });
