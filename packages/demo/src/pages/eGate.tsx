@@ -6,11 +6,9 @@ import { action, makeAutoObservable, observable, runInAction } from "mobx";
 import { observer } from "mobx-react-lite";
 import { NextPage } from "next";
 import Head from "next/head";
+import { exec } from "child_process";
 import { GLOBAL_STATE } from "../state";
 import { ProgressStream, RouteStackProps, createFileStream } from "../utils";
-
-// We'll import child_process for fallback (this works on Node)
-import { exec } from "child_process";
 
 enum Stage {
     Uploading,
@@ -95,9 +93,12 @@ class InstallPageState {
             runInAction(() => {
                 this.log += "ADB connection not established via GLOBAL_STATE.adb.\n";
             });
+            // Fallback to command-line installation might be implemented here.
+            return;
         }
 
-        const pm = new PackageManager(GLOBAL_STATE.adb || undefined);
+        // Use non-null assertion (!) since we already checked that GLOBAL_STATE.adb is defined.
+        const pm = new PackageManager(GLOBAL_STATE.adb!);
         const start = Date.now();
         const installLog = await pm.installStream(
             file.size,
@@ -139,50 +140,36 @@ class InstallPageState {
         );
 
         const pkg = variantPackageMap[variant];
-        // If GLOBAL_STATE.adb is defined, you might have alternative methods.
-        // Otherwise, run the adb shell commands using child_process.exec.
-        if (!GLOBAL_STATE.adb) {
-            runInAction(() => {
-                this.log += `\nGLOBAL_STATE.adb not defined. Running shell commands via child_process...\n`;
-            });
-            exec(
-                `adb shell pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`,
-                (error, stdout, stderr) => {
-                    if (error) {
-                        runInAction(() => {
-                            this.log += `Error granting permission: ${error.message}\n`;
-                        });
-                    } else {
-                        runInAction(() => {
-                            this.log += `WRITE_SECURE_SETTINGS permission granted to ${pkg}.\n`;
-                        });
-                    }
-                }
-            );
-            runInAction(() => {
-                this.log += `\nSetting device owner to ${pkg}/.a using child_process...\n`;
-            });
-            exec(
-                `adb shell dpm set-device-owner ${pkg}/.a`,
-                (error, stdout, stderr) => {
-                    if (error) {
-                        runInAction(() => {
-                            this.log += `Error setting device owner: ${error.message}\n`;
-                        });
-                    } else {
-                        runInAction(() => {
-                            this.log += `Device owner set to ${pkg}/.a successfully.\n`;
-                        });
-                    }
-                }
-            );
-        } else {
-            // If GLOBAL_STATE.adb is available, you can adapt this section 
-            // to use its available methods for executing shell commands.
-            runInAction(() => {
-                this.log += `\nAttempting to run shell commands via GLOBAL_STATE.adb is not implemented in this example.\n`;
-            });
-        }
+        // Fallback: if GLOBAL_STATE.adb is not available, we run adb shell commands via child_process.exec.
+        // Since we have passed the earlier check, GLOBAL_STATE.adb is available and we can implement alternative logic if needed.
+        runInAction(() => {
+            this.log += `\nRunning adb shell command: pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS\n`;
+        });
+        exec(`adb shell pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`, (error, stdout, stderr) => {
+            if (error) {
+                runInAction(() => {
+                    this.log += `Error granting permission: ${error.message}\n`;
+                });
+            } else {
+                runInAction(() => {
+                    this.log += `WRITE_SECURE_SETTINGS permission granted to ${pkg}.\n`;
+                });
+            }
+        });
+        runInAction(() => {
+            this.log += `\nRunning adb shell command: dpm set-device-owner ${pkg}/.a\n`;
+        });
+        exec(`adb shell dpm set-device-owner ${pkg}/.a`, (error, stdout, stderr) => {
+            if (error) {
+                runInAction(() => {
+                    this.log += `Error setting device owner: ${error.message}\n`;
+                });
+            } else {
+                runInAction(() => {
+                    this.log += `Device owner set to ${pkg}/.a successfully.\n`;
+                });
+            }
+        });
 
         const transferRate = (file.size / (elapsed / 1000) / 1024 / 1024).toFixed(2);
         runInAction(() => {
@@ -218,21 +205,9 @@ const InstallEgate: NextPage = () => {
                 }}
             />
             <Stack horizontal tokens={{ childrenGap: 15 }}>
-                <PrimaryButton
-                    disabled={state.installing}
-                    text="General"
-                    onClick={() => state.install("general")}
-                />
-                <PrimaryButton
-                    disabled={state.installing}
-                    text="LG Classic"
-                    onClick={() => state.install("lg-classic")}
-                />
-                <PrimaryButton
-                    disabled={state.installing}
-                    text="External Accessibility"
-                    onClick={() => state.install("external")}
-                />
+                <PrimaryButton disabled={state.installing} text="General" onClick={() => state.install("general")} />
+                <PrimaryButton disabled={state.installing} text="LG Classic" onClick={() => state.install("lg-classic")} />
+                <PrimaryButton disabled={state.installing} text="External Accessibility" onClick={() => state.install("external")} />
             </Stack>
             {state.progress && (
                 <ProgressIndicator
