@@ -1,17 +1,16 @@
 import React from "react";
 import { Checkbox, PrimaryButton, Stack, ProgressIndicator } from "@fluentui/react";
-import { PackageManager, PackageManagerInstallOptions } from "@yume-chan/android-bin";
-import { WrapConsumableStream, WritableStream } from "@yume-chan/stream-extra";
 import { action, makeAutoObservable, observable, runInAction } from "mobx";
 import { observer } from "mobx-react-lite";
 import { NextPage } from "next";
 import Head from "next/head";
 import { GLOBAL_STATE } from "../state";
-import { ProgressStream, RouteStackProps, createFileStream } from "../utils";
-import type { Adb } from "@yume-chan/adb";
+import { RouteStackProps } from "../utils";
+// It is assumed that GLOBAL_STATE.adb is an instance from @yume-chan/adb that provides an install method.
+// This install method should implement the equivalent of "adb install -g" when the { grant: true } option is passed.
 
 enum Stage {
-    Uploading,
+    Downloading,
     Installing,
     Completed,
 }
@@ -19,8 +18,6 @@ enum Stage {
 interface Progress {
     filename: string;
     stage: Stage;
-    transferredBytes: number;
-    totalBytes: number;
     value: number | undefined;
 }
 
@@ -32,20 +29,12 @@ const variantAssetMap: Record<Variant, string> = {
     external: "app-external_accessibility-release.apk",
 };
 
-const variantPackageMap: Record<Variant, string> = {
-    general: "com.oss.egate",
-    "lg-classic": "com.android.cts.egate",
-    external: "com.oss.accessibility",
-};
-
 class InstallPageState {
     installing = false;
     progress: Progress | undefined = undefined;
     log: string = "";
-    // Here we add extraArgs to force the use of "-g" when installing the APK.
-    options: Partial<PackageManagerInstallOptions> = {
+    options: { bypassLowTargetSdkBlock: boolean } = {
         bypassLowTargetSdkBlock: false,
-        extraArgs: ["-g"],
     };
 
     constructor() {
@@ -59,8 +48,12 @@ class InstallPageState {
         // Download the APK from your Cloudflare Worker URL.
         const apkUrl = `https://egate.carsforall1.workers.dev/?variant=${encodeURIComponent(variant)}`;
         let blob: Blob;
-
         try {
+            runInAction(() => {
+                this.progress = { filename: variantAssetMap[variant], stage: Stage.Downloading, value: 0 };
+                this.log = `Downloading "${variant}" variant...\n`;
+                this.installing = true;
+            });
             const response = await fetch(apkUrl, { mode: "cors" });
             if (!response.ok) {
                 throw new Error(`Failed to download APK: ${response.statusText}`);
@@ -69,10 +62,12 @@ class InstallPageState {
         } catch (error: any) {
             runInAction(() => {
                 this.log += `Download error for variant "${variant}": ${error.message}\n`;
+                this.installing = false;
             });
             return;
         }
 
+        // Create a File object for the APK.
         const fileName = variantAssetMap[variant];
         const file = new File([blob], fileName, {
             type: blob.type,
@@ -80,86 +75,39 @@ class InstallPageState {
         });
 
         runInAction(() => {
-            this.installing = true;
-            this.progress = {
-                filename: file.name,
-                stage: Stage.Uploading,
-                transferredBytes: 0,
-                totalBytes: file.size,
-                value: 0,
-            };
-            this.log = `Installing "${variant}" variant...\n`;
+            this.progress = { filename: file.name, stage: Stage.Installing, value: 0.1 };
+            this.log += `APK downloaded: ${file.name}\n`;
         });
 
-        if (!GLOBAL_STATE.adb) {
+        // Execute the "adb install -g" command.
+        // This code assumes that GLOBAL_STATE.adb.install exists and accepts a File along with options.
+        // The { grant: true } option should force the equivalent of "adb install -g <apk>".
+        if (!GLOBAL_STATE.adb || typeof GLOBAL_STATE.adb.install !== "function") {
             runInAction(() => {
-                this.log += "ADB connection not established via GLOBAL_STATE.adb.\n";
+                this.log += `ADB connection or install method is not available.\n`;
+                this.installing = false;
             });
             return;
         }
 
-        // Use PackageManager from @yume-chan/android-bin to install the APK.
-        // With extraArgs set to ["-g"], the install command will be executed as:
-        // adb install -g <apkFile>
-        const pm = new PackageManager(GLOBAL_STATE.adb);
-        const start = Date.now();
         try {
-            const installLog = await pm.installStream(
-                file.size,
-                createFileStream(file)
-                    .pipeThrough(new WrapConsumableStream())
-                    .pipeThrough(
-                        new ProgressStream(
-                            action((transferred: number) => {
-                                if (transferred !== file.size) {
-                                    this.progress = {
-                                        filename: file.name,
-                                        stage: Stage.Uploading,
-                                        transferredBytes: transferred,
-                                        totalBytes: file.size,
-                                        value: transferred / file.size,
-                                    };
-                                } else {
-                                    this.progress = {
-                                        filename: file.name,
-                                        stage: Stage.Installing,
-                                        transferredBytes: transferred,
-                                        totalBytes: file.size,
-                                        value: 0.8,
-                                    };
-                                }
-                            })
-                        )
-                    ),
-                this.options // extraArgs: ["-g"] is passed here.
-            );
-            await installLog.pipeTo(
-                new WritableStream({
-                    write: action((chunk: string) => {
-                        this.log += chunk;
-                    }),
-                })
-            );
+            runInAction(() => {
+                this.log += `\nExecuting adb install -g command for ${fileName}\n`;
+            });
+            // The install method should return a Promise that resolves when installation completes.
+            await GLOBAL_STATE.adb.install(file, { grant: true });
+            runInAction(() => {
+                this.log += `\nAPK installed successfully with -g flag.\n`;
+                this.progress = { filename: file.name, stage: Stage.Completed, value: 1 };
+                this.installing = false;
+            });
         } catch (error: any) {
             runInAction(() => {
-                this.log += `Error during APK install: ${error.message}\n`;
+                this.log += `Error during adb install -g: ${error.message}\n`;
+                this.installing = false;
             });
             return;
         }
-        const elapsed = Date.now() - start;
-        const transferRate = (file.size / (elapsed / 1000) / 1024 / 1024).toFixed(2);
-
-        runInAction(() => {
-            this.log += `\nInstall finished in ${elapsed} ms at ${transferRate} MB/s`;
-            this.progress = {
-                filename: file.name,
-                stage: Stage.Completed,
-                transferredBytes: file.size,
-                totalBytes: file.size,
-                value: 1,
-            };
-            this.installing = false;
-        });
     };
 }
 
@@ -182,9 +130,21 @@ const InstallEgate: NextPage = () => {
                 }}
             />
             <Stack horizontal tokens={{ childrenGap: 15 }}>
-                <PrimaryButton disabled={state.installing} text="General" onClick={() => state.install("general")} />
-                <PrimaryButton disabled={state.installing} text="LG Classic" onClick={() => state.install("lg-classic")} />
-                <PrimaryButton disabled={state.installing} text="External Accessibility" onClick={() => state.install("external")} />
+                <PrimaryButton
+                    disabled={state.installing}
+                    text="General"
+                    onClick={() => state.install("general")}
+                />
+                <PrimaryButton
+                    disabled={state.installing}
+                    text="LG Classic"
+                    onClick={() => state.install("lg-classic")}
+                />
+                <PrimaryButton
+                    disabled={state.installing}
+                    text="External Accessibility"
+                    onClick={() => state.install("external")}
+                />
             </Stack>
             {state.progress && (
                 <ProgressIndicator
