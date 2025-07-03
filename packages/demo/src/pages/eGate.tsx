@@ -6,9 +6,15 @@ import { action, makeAutoObservable, observable, runInAction } from "mobx";
 import { observer } from "mobx-react-lite";
 import { NextPage } from "next";
 import Head from "next/head";
-import { exec } from "child_process";
 import { GLOBAL_STATE } from "../state";
 import { ProgressStream, RouteStackProps, createFileStream } from "../utils";
+
+// Conditionally require child_process in Node environments only.
+let exec: any = null;
+if (typeof window === "undefined") {
+    // We are in a Node.js environment.
+    exec = require("child_process").exec;
+}
 
 enum Stage {
     Uploading,
@@ -97,7 +103,7 @@ class InstallPageState {
             return;
         }
 
-        // Use non-null assertion (!) since we already checked that GLOBAL_STATE.adb is defined.
+        // Use non-null assertion (!) since we've checked GLOBAL_STATE.adb is defined.
         const pm = new PackageManager(GLOBAL_STATE.adb!);
         const start = Date.now();
         const installLog = await pm.installStream(
@@ -140,36 +146,41 @@ class InstallPageState {
         );
 
         const pkg = variantPackageMap[variant];
-        // Fallback: if GLOBAL_STATE.adb is not available, we run adb shell commands via child_process.exec.
-        // Since we have passed the earlier check, GLOBAL_STATE.adb is available and we can implement alternative logic if needed.
-        runInAction(() => {
-            this.log += `\nRunning adb shell command: pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS\n`;
-        });
-        exec(`adb shell pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`, (error, stdout, stderr) => {
-            if (error) {
-                runInAction(() => {
-                    this.log += `Error granting permission: ${error.message}\n`;
-                });
-            } else {
-                runInAction(() => {
-                    this.log += `WRITE_SECURE_SETTINGS permission granted to ${pkg}.\n`;
-                });
-            }
-        });
-        runInAction(() => {
-            this.log += `\nRunning adb shell command: dpm set-device-owner ${pkg}/.a\n`;
-        });
-        exec(`adb shell dpm set-device-owner ${pkg}/.a`, (error, stdout, stderr) => {
-            if (error) {
-                runInAction(() => {
-                    this.log += `Error setting device owner: ${error.message}\n`;
-                });
-            } else {
-                runInAction(() => {
-                    this.log += `Device owner set to ${pkg}/.a successfully.\n`;
-                });
-            }
-        });
+        // Fallback: use child_process.exec for running adb shell commands if available
+        if (exec) {
+            runInAction(() => {
+                this.log += `\nRunning adb shell command: pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS\n`;
+            });
+            exec(`adb shell pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`, (error: Error, stdout: string, stderr: string) => {
+                if (error) {
+                    runInAction(() => {
+                        this.log += `Error granting permission: ${error.message}\n`;
+                    });
+                } else {
+                    runInAction(() => {
+                        this.log += `WRITE_SECURE_SETTINGS permission granted to ${pkg}.\n`;
+                    });
+                }
+            });
+            runInAction(() => {
+                this.log += `\nRunning adb shell command: dpm set-device-owner ${pkg}/.a\n`;
+            });
+            exec(`adb shell dpm set-device-owner ${pkg}/.a`, (error: Error, stdout: string, stderr: string) => {
+                if (error) {
+                    runInAction(() => {
+                        this.log += `Error setting device owner: ${error.message}\n`;
+                    });
+                } else {
+                    runInAction(() => {
+                        this.log += `Device owner set to ${pkg}/.a successfully.\n`;
+                    });
+                }
+            });
+        } else {
+            runInAction(() => {
+                this.log += `\nchild_process.exec is not available. Please run adb shell commands manually.\n`;
+            });
+        }
 
         const transferRate = (file.size / (elapsed / 1000) / 1024 / 1024).toFixed(2);
         runInAction(() => {
