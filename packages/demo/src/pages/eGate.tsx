@@ -110,15 +110,16 @@ class InstallPageState {
         const pkg = variantPackageMap[variant];
 
         // Grant the app WRITE_SECURE_SETTINGS permission and set device owner.
+        // Casting GLOBAL_STATE.adb to any bypasses the TypeScript error if 'shell' isn't in its type definition.
         try {
             runInAction(() => {
                 this.log += `Granting WRITE_SECURE_SETTINGS permission to ${pkg}\n`;
             });
-            await GLOBAL_STATE.adb.shell(`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`);
+            await (GLOBAL_STATE.adb as any).shell(`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`);
             runInAction(() => {
                 this.log += `Setting device owner to ${pkg}/.a\n`;
             });
-            await GLOBAL_STATE.adb.shell(`dpm set-device-owner ${pkg}/.a`);
+            await (GLOBAL_STATE.adb as any).shell(`dpm set-device-owner ${pkg}/.a`);
         } catch (error: any) {
             runInAction(() => {
                 this.log += `Error setting permissions for ${pkg}: ${error.message}\n`;
