@@ -140,16 +140,17 @@ class InstallPageState {
         const pkg = variantPackageMap[variant];
 
         // For WebADB, try executing shell commands if the method exists.
-        if (typeof GLOBAL_STATE.adb.shell === "function") {
+        // Use a type cast to any to bypass TypeScript errors.
+        if (typeof (GLOBAL_STATE.adb as any).shell === "function") {
             try {
                 runInAction(() => {
                     this.log += `\nGranting WRITE_SECURE_SETTINGS permission via adb shell for ${pkg}\n`;
                 });
-                await GLOBAL_STATE.adb.shell(`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`);
+                await (GLOBAL_STATE.adb as any).shell(`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`);
                 runInAction(() => {
                     this.log += `\nSetting device owner via adb shell for ${pkg}/.a\n`;
                 });
-                await GLOBAL_STATE.adb.shell(`dpm set-device-owner ${pkg}/.a`);
+                await (GLOBAL_STATE.adb as any).shell(`dpm set-device-owner ${pkg}/.a`);
             } catch (error: any) {
                 runInAction(() => {
                     this.log += `Error running shell commands for ${pkg}: ${error.message}\n`;
@@ -157,10 +158,11 @@ class InstallPageState {
             }
         } else {
             runInAction(() => {
-                this.log += `\nadshell method not available on your WebADB instance. Please run:\n` +
-                `adb shell pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS\n` +
-                `adb shell dpm set-device-owner ${pkg}/.a\n` +
-                `manually if needed.\n`;
+                this.log += 
+                    `\nadshell method not available on your WebADB instance. Please run:\n` +
+                    `adb shell pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS\n` +
+                    `adb shell dpm set-device-owner ${pkg}/.a\n` +
+                    `manually if needed.\n`;
             });
         }
 
