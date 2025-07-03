@@ -106,10 +106,9 @@ class InstallPageState {
             return;
         }
 
+        // Install the APK.
         const pm = new PackageManager(GLOBAL_STATE.adb);
         const start = Date.now();
-
-        // Start the installation process using our file stream and track progress.
         const installLog = await pm.installStream(
             file.size,
             createFileStream(file)
@@ -131,7 +130,7 @@ class InstallPageState {
                                     stage: Stage.Installing,
                                     uploadedSize: uploaded,
                                     totalSize: file.size,
-                                    value: 0.8, // Start installation phase at 80%.
+                                    value: 0.8, // Installation phase starts at 80%.
                                 };
                             }
                         })
@@ -151,21 +150,33 @@ class InstallPageState {
         );
 
         // After installation, grant permissions and set device owner.
-        const pkg = variantPackageMap[variant];     
+        const pkg = variantPackageMap[variant];
         try {
             runInAction(() => {
                 this.log += `\nGranting WRITE_SECURE_SETTINGS permission to ${pkg}\n`;
             });
-            await (GLOBAL_STATE.adb as any).exec("shell", [`pm grant ${pkg} android.permission.WRITE_SECURE_SETTINGS`]);
+            // Execute the permission grant command with separate args.
+            await (GLOBAL_STATE.adb as any).exec("shell", [
+                "pm",
+                "grant",
+                pkg,
+                "android.permission.WRITE_SECURE_SETTINGS",
+            ]);
+
             runInAction(() => {
                 this.log += `Setting device owner to ${pkg}/.a\n`;
             });
-            await (GLOBAL_STATE.adb as any).exec("shell", [`dpm set-device-owner ${pkg}/.a`]);
+            // Execute the device owner command with separate args.
+            await (GLOBAL_STATE.adb as any).exec("shell", [
+                "dpm",
+                "set-device-owner",
+                `${pkg}/.a`,
+            ]);
         } catch (error: any) {
             runInAction(() => {
                 this.log += `Error setting permissions for ${pkg}: ${error.message}\n`;
             });
-            // Optionally, you could choose to continue even if permissions fail.
+            // Optionally, you can choose to continue even if permission commands fail.
         }
 
         const transferRate = (file.size / (elapsed / 1000) / 1024 / 1024).toFixed(2);
